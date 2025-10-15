@@ -21,20 +21,20 @@
         var: kubeadm_init.stdout_lines
       when: kubeadm_init is defined and kubeadm_init.changed
 
-    - name: "Création du répertoire .kube pour l'utilisateur ubuntu"
+    - name: "Création du répertoire .kube pour l'utilisateur hocine"
       file:
-        path: /home/ubuntu/.kube
+        path: /home/hocine/.kube
         state: directory
-        owner: ubuntu
-        group: ubuntu
+        owner: hocine
+        group: hocine
         mode: '0755'
 
     - name: "Copie du fichier de configuration kubectl"
       copy:
         src: /etc/kubernetes/admin.conf
-        dest: /home/ubuntu/.kube/config
-        owner: ubuntu
-        group: ubuntu
+        dest: /home/hocine/.kube/config
+        owner: hocine
+        group: hocine
         mode: '0644'
         remote_src: true
 
