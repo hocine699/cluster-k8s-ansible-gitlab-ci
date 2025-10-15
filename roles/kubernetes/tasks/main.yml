@@ -2,14 +2,14 @@
 - name: "Installation des composants Kubernetes"
   tags: kubernetes
   block:
-    - name: "Ajout de la clé GPG Kubernetes"
-      apt_key:
-        url: https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key
-        state: present
+    - name: "Téléchargement et installation de la clé GPG Kubernetes"
+      shell: |
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
     - name: "Ajout du dépôt Kubernetes"
       apt_repository:
-        repo: "deb https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
         state: present
         filename: kubernetes
 
