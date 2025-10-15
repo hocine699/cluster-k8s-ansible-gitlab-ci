@@ -1,5 +1,6 @@
 ---
 - name: "Installation et configuration de containerd"
+  tags: containerd
   block:
     - name: "Installation de containerd"
       apt:

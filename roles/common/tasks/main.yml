@@ -1,5 +1,6 @@
 ---
 - name: "Configuration commune pour tous les nœuds"
+  tags: common
   block:
     - name: "Désactivation du swap"
       shell: |

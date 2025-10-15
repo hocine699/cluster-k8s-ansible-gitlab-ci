@@ -1,14 +1,30 @@
 ---
 - name: "Installation des composants Kubernetes"
+  tags: kubernetes
   block:
+    - name: "Ajout de la clé GPG Kubernetes"
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key
+        state: present
+
+    - name: "Ajout du dépôt Kubernetes"
+      apt_repository:
+        repo: "deb https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        state: present
+        filename: kubernetes
+
+    - name: "Mise à jour du cache APT"
+      apt:
+        update_cache: true
+
     - name: "Installation de kubelet, kubeadm et kubectl"
       apt:
         name:
-          - kubelet={{ kubernetes_version_rhel_package }}
-          - kubeadm={{ kubernetes_version_rhel_package }}
-          - kubectl={{ kubernetes_version_rhel_package }}
+          - kubelet
+          - kubeadm  
+          - kubectl
         state: present
-        allow_downgrade: true
+        update_cache: true
 
     - name: "Verrouillage des versions Kubernetes"
       dpkg_selections:

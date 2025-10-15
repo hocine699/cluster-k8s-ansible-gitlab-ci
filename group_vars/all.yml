@@ -1,6 +1,6 @@
 # Variables pour le cluster Kubernetes
-kubernetes_version: "1.28.2"
-kubernetes_version_rhel_package: "1.28.2-0"
+kubernetes_version: "1.28"
+kubernetes_version_rhel_package: "1.28.*"
 
 # Configuration réseau
 pod_network_cidr: "10.244.0.0/16"
