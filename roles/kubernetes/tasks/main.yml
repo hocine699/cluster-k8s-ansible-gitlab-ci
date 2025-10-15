@@ -2,6 +2,19 @@
 - name: "Installation des composants Kubernetes"
   tags: kubernetes
   block:
+    - name: "Nettoyage des anciennes configurations Kubernetes"
+      shell: |
+        rm -f /etc/apt/sources.list.d/kubernetes.list
+        rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        rm -f /etc/apt/trusted.gpg.d/kubernetes*
+      ignore_errors: true
+
+    - name: "Création du répertoire keyrings"
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
     - name: "Téléchargement et installation de la clé GPG Kubernetes"
       shell: |
         curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
