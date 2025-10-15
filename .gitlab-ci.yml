@@ -8,6 +8,7 @@ stages:
   - deploy-cluster
   - verify
   - deploy-app
+  - maintenance
 
 variables:
   ANSIBLE_HOST_KEY_CHECKING: "False"
@@ -387,7 +388,7 @@ deploy_test_app:
 
 # Job de nettoyage manuel
 cleanup_cluster:
-  stage: deploy-cluster
+  stage: maintenance
   <<: *ansible_job
   script:
     - echo "Nettoyage du cluster..."
