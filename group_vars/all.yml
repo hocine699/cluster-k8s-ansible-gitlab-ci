@@ -1,0 +1,46 @@
+# Variables pour le cluster Kubernetes
+kubernetes_version: "1.28.2"
+kubernetes_version_rhel_package: "1.28.2-0"
+
+# Configuration réseau
+pod_network_cidr: "10.244.0.0/16"
+service_network_cidr: "10.96.0.0/12"
+
+# CNI Plugin (Flannel)
+flannel_version: "v0.22.3"
+
+# Docker/Containerd
+containerd_version: "1.7.8"
+
+# Configuration du cluster
+cluster_name: "k8s-cluster"
+api_server_endpoint: "{{ hostvars[groups['masters'][0]]['ansible_host'] }}"
+api_server_port: 6443
+
+# Certificats
+cert_dir: "/etc/kubernetes/pki"
+kubeconfig_dir: "/etc/kubernetes"
+
+# Configuration système
+swap_disabled: true
+firewall_disabled: true
+
+# Packages à installer
+common_packages:
+  - apt-transport-https
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - software-properties-common
+
+# Configuration des modules kernel
+kernel_modules:
+  - br_netfilter
+  - overlay
+
+# Configuration sysctl
+sysctl_config:
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.ip_forward: 1

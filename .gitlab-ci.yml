@@ -1,0 +1,374 @@
+# Pipeline GitLab CI pour déploiement cluster Kubernetes
+# Compatible avec GitLab hébergé sur Synology NAS
+
+stages:
+  - validate
+  - prepare
+  - deploy-cluster
+  - verify
+  - deploy-app
+
+variables:
+  ANSIBLE_HOST_KEY_CHECKING: "False"
+  ANSIBLE_FORCE_COLOR: "True"
+  ANSIBLE_STDOUT_CALLBACK: "yaml"
+  # Variables à définir dans GitLab CI/CD Variables
+  # K8S_MASTER_IP, K8S_WORKER1_IP, K8S_WORKER2_IP
+  # SSH_PRIVATE_KEY (base64 encoded)
+
+# Template pour les jobs Ansible avec votre image personnalisée
+.ansible_job: &ansible_job
+  image: mon-runner-devops:latest
+  tags:
+    - synology
+  before_script:
+    # Vos dépendances sont déjà dans l'image mon-runner-devops
+    - mkdir -p ~/.ssh
+    # Utilisation directe de la clé SSH depuis GitLab Variables (pas de base64)
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H $K8S_MASTER_IP >> ~/.ssh/known_hosts
+    - ssh-keyscan -H $K8S_WORKER1_IP >> ~/.ssh/known_hosts
+    - ssh-keyscan -H $K8S_WORKER2_IP >> ~/.ssh/known_hosts
+    # Générer l'inventaire dynamique avec les variables CI
+    - |
+      cat > inventory.yml << EOF
+      all:
+        children:
+          masters:
+            hosts:
+              k8s-master-01:
+                ansible_host: $K8S_MASTER_IP
+                ansible_user: hocine
+                ansible_ssh_private_key_file: ~/.ssh/id_rsa
+                node_role: master
+          workers:
+            hosts:
+              k8s-worker-01:
+                ansible_host: $K8S_WORKER1_IP
+                ansible_user: hocine
+                ansible_ssh_private_key_file: ~/.ssh/id_rsa
+                node_role: worker
+              k8s-worker-02:
+                ansible_host: $K8S_WORKER2_IP
+                ansible_user: hocine
+                ansible_ssh_private_key_file: ~/.ssh/id_rsa
+                node_role: worker
+        vars:
+          ansible_python_interpreter: /usr/bin/python3
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+      EOF
+
+# Stage 1: Validation
+validate_syntax:
+  stage: validate
+  <<: *ansible_job
+  script:
+    - ansible-playbook --syntax-check -i inventory.yml site.yml
+    - ansible-lint site.yml || true  # Warning only
+  only:
+    - merge_requests
+    - main
+    - develop
+
+validate_inventory:
+  stage: validate
+  <<: *ansible_job
+  script:
+    - ansible all -i inventory.yml -m ping --timeout=10
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# Stage 2: Préparation
+prepare_environment:
+  stage: prepare
+  <<: *ansible_job
+  script:
+    - echo "Préparation de l'environnement..."
+    - ansible all -i inventory.yml -m setup
+    - ansible all -i inventory.yml -m shell -a "uptime"
+  artifacts:
+    reports:
+      junit: test-results.xml
+    expire_in: 1 hour
+  only:
+    - main
+    - develop
+
+# Stage 3: Déploiement du cluster
+deploy_common:
+  stage: deploy-cluster
+  <<: *ansible_job
+  script:
+    - echo "Déploiement de la configuration commune..."
+    - ansible-playbook -i inventory.yml site.yml --tags common -v
+  dependencies:
+    - prepare_environment
+  artifacts:
+    paths:
+      - logs/
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+
+deploy_container_runtime:
+  stage: deploy-cluster
+  <<: *ansible_job
+  script:
+    - echo "Installation du runtime de conteneurs..."
+    - ansible-playbook -i inventory.yml site.yml --tags containerd -v
+  dependencies:
+    - deploy_common
+  artifacts:
+    paths:
+      - logs/
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+
+deploy_kubernetes:
+  stage: deploy-cluster
+  <<: *ansible_job
+  script:
+    - echo "Installation de Kubernetes..."
+    - ansible-playbook -i inventory.yml site.yml --tags kubernetes -v
+  dependencies:
+    - deploy_container_runtime
+  artifacts:
+    paths:
+      - logs/
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+
+deploy_master:
+  stage: deploy-cluster
+  <<: *ansible_job
+  script:
+    - echo "Configuration du nœud master..."
+    - ansible-playbook -i inventory.yml site.yml --limit masters -v
+  dependencies:
+    - deploy_kubernetes
+  artifacts:
+    paths:
+      - logs/
+      - kubeconfig/
+      - dashboard-info/
+    expire_in: 1 week
+  after_script:
+    - mkdir -p kubeconfig dashboard-info
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config kubeconfig/config
+    - |
+      # Récupération des informations du dashboard
+      ssh -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP "
+        kubectl get secret admin-user -n kubernetes-dashboard -o jsonpath='{.data.token}' | base64 -d > dashboard-token.txt
+        echo 'Dashboard URL: https://$K8S_MASTER_IP:30443' > dashboard-info.txt
+        echo 'Token pour connexion:' >> dashboard-info.txt
+        cat dashboard-token.txt >> dashboard-info.txt
+      "
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:dashboard-* dashboard-info/
+  only:
+    - main
+    - develop
+
+deploy_workers:
+  stage: deploy-cluster
+  <<: *ansible_job
+  script:
+    - echo "Configuration des nœuds workers..."
+    - ansible-playbook -i inventory.yml site.yml --limit workers -v
+  dependencies:
+    - deploy_master
+  artifacts:
+    paths:
+      - logs/
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+
+# Stage 4: Vérification
+verify_cluster:
+  stage: verify
+  <<: *ansible_job
+  script:
+    - echo "Vérification du cluster..."
+    - mkdir -p ~/.kube
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    - kubectl get nodes -o wide
+    - kubectl get pods -A
+    - kubectl cluster-info
+    - |
+      # Test de déploiement simple
+      kubectl create deployment nginx-test --image=nginx:latest || true
+      kubectl expose deployment nginx-test --port=80 --type=NodePort || true
+      sleep 30
+      kubectl get pods -l app=nginx-test
+      kubectl delete deployment nginx-test || true
+      kubectl delete service nginx-test || true
+  dependencies:
+    - deploy_workers
+  artifacts:
+    reports:
+      junit: cluster-test-results.xml
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+
+# Stage 5: Déploiement d'applications (optionnel)
+# Stage 5: Déploiement d'applications et interfaces
+deploy_dashboard:
+  stage: deploy-app
+  <<: *ansible_job
+  script:
+    - echo "Déploiement du Kubernetes Dashboard..."
+    - mkdir -p ~/.kube
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    - kubectl apply -f k8s-dashboard.yaml
+    - sleep 60
+    - kubectl get pods -n kubernetes-dashboard
+    - kubectl get services -n kubernetes-dashboard
+    - |
+      echo "Récupération du token d'accès..."
+      TOKEN=$(kubectl get secret admin-user -n kubernetes-dashboard -o jsonpath='{.data.token}' | base64 -d)
+      echo "Dashboard URL: https://$K8S_MASTER_IP:30443"
+      echo "Token: $TOKEN"
+      echo "Dashboard accessible à: https://$K8S_MASTER_IP:30443"
+      echo "Token d'accès: $TOKEN" > dashboard-access.txt
+  dependencies:
+    - verify_cluster
+  artifacts:
+    paths:
+      - dashboard-access.txt
+    expire_in: 1 week
+  only:
+    - main
+
+deploy_monitoring:
+  stage: deploy-app
+  <<: *ansible_job
+  script:
+    - echo "Déploiement du monitoring pour intégration NAS..."
+    - mkdir -p ~/.kube monitoring-config
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    - kubectl apply -f k8s-monitoring-stack.yaml
+    - sleep 60
+    - kubectl get pods -n kube-system -l app=node-exporter
+    - kubectl get pods -n kube-system -l app=kube-state-metrics
+    - |
+      # Récupération du token Prometheus
+      echo "Récupération du token d'authentification..."
+      TOKEN=$(kubectl get secret prometheus-k8s-token -n kube-system -o jsonpath='{.data.token}' | base64 -d)
+      echo "$TOKEN" > monitoring-config/prometheus-k8s-token.txt
+      
+      # Génération de la config Prometheus
+      cat > monitoring-config/prometheus-k8s-jobs.yml << EOF
+      # Configuration à ajouter à votre prometheus.yml sur le NAS
+      
+      scrape_configs:
+        # Métriques des nœuds (Node Exporter)
+        - job_name: 'kubernetes-nodes'
+          static_configs:
+            - targets:
+              - '$K8S_MASTER_IP:9100'
+              - '$K8S_WORKER1_IP:9100'
+              - '$K8S_WORKER2_IP:9100'
+          scrape_interval: 30s
+        
+        # Métriques Kubernetes (kube-state-metrics)
+        - job_name: 'kube-state-metrics'
+          static_configs:
+            - targets:
+              - '$K8S_MASTER_IP:30080'
+          scrape_interval: 30s
+        
+        # API Server Kubernetes
+        - job_name: 'kubernetes-apiserver'
+          scheme: https
+          tls_config:
+            insecure_skip_verify: true
+          bearer_token_file: /etc/prometheus/k8s-token.txt
+          static_configs:
+            - targets:
+              - '$K8S_MASTER_IP:6443'
+          scrape_interval: 30s
+        
+        # Kubelet cAdvisor
+        - job_name: 'kubernetes-kubelet'
+          scheme: https
+          tls_config:
+            insecure_skip_verify: true
+          bearer_token_file: /etc/prometheus/k8s-token.txt
+          static_configs:
+            - targets:
+              - '$K8S_MASTER_IP:10250'
+              - '$K8S_WORKER1_IP:10250'
+              - '$K8S_WORKER2_IP:10250'
+          metrics_path: /metrics/cadvisor
+          scrape_interval: 30s
+      EOF
+      
+      # Informations Grafana
+      cat > monitoring-config/grafana-dashboards.txt << EOF
+      DASHBOARDS GRAFANA À IMPORTER:
+      
+      1. Kubernetes Cluster Monitoring (ID: 7249)
+      2. Kubernetes Pod Monitoring (ID: 6417)
+      3. Node Exporter Full (ID: 1860)
+      4. Kubernetes Deployment (ID: 8588)
+      
+      ENDPOINTS MONITORING:
+      - Node Exporter: $K8S_MASTER_IP:9100, $K8S_WORKER1_IP:9100, $K8S_WORKER2_IP:9100
+      - kube-state-metrics: $K8S_MASTER_IP:30080
+      - API Server: $K8S_MASTER_IP:6443
+      - Dashboard K8s: https://$K8S_MASTER_IP:30443
+      EOF
+      
+      echo "Configuration monitoring générée dans monitoring-config/"
+  dependencies:
+    - deploy_dashboard
+  artifacts:
+    paths:
+      - monitoring-config/
+    expire_in: 1 week
+  when: manual
+  only:
+    - main
+
+deploy_test_app:
+  stage: deploy-app
+  <<: *ansible_job
+  script:
+    - echo "Déploiement de l'application de test..."
+    - mkdir -p ~/.kube
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    - kubectl apply -f test-deployment.yaml
+    - sleep 60
+    - kubectl get pods -l app=nginx-test
+    - kubectl get services nginx-test-service
+    - echo "Application nginx accessible sur http://$K8S_MASTER_IP:30080"
+    - echo "Dashboard Kubernetes accessible sur https://$K8S_MASTER_IP:30443"
+  dependencies:
+    - deploy_dashboard
+  when: manual
+  only:
+    - main
+
+# Job de nettoyage manuel
+cleanup_cluster:
+  stage: deploy-cluster
+  <<: *ansible_job
+  script:
+    - echo "Nettoyage du cluster..."
+    - ansible-playbook -i inventory.yml cleanup-playbook.yml -v
+  when: manual
+  allow_failure: true
+  only:
+    - main
+    - develop

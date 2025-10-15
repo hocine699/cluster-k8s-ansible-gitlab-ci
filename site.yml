@@ -1,0 +1,35 @@
+---
+- name: "Déploiement d'un cluster Kubernetes sur Ubuntu 24.04"
+  hosts: all
+  become: true
+  gather_facts: true
+  
+  pre_tasks:
+    - name: "Mise à jour du cache APT"
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+  roles:
+    - common
+    - containerd
+    - kubernetes
+    - role: master
+      when: inventory_hostname in groups['masters']
+    - role: worker
+      when: inventory_hostname in groups['workers']
+
+  post_tasks:
+    - name: "Affichage du statut du cluster"
+      shell: kubectl get nodes
+      register: cluster_status
+      when: inventory_hostname in groups['masters']
+      delegate_to: "{{ groups['masters'][0] }}"
+      run_once: true
+      
+    - name: "Affichage des résultats"
+      debug:
+        var: cluster_status.stdout_lines
+      when: inventory_hostname in groups['masters']
+      delegate_to: "{{ groups['masters'][0] }}"
+      run_once: true

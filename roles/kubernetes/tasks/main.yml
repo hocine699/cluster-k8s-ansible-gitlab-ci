@@ -1,0 +1,26 @@
+---
+- name: "Installation des composants Kubernetes"
+  block:
+    - name: "Installation de kubelet, kubeadm et kubectl"
+      apt:
+        name:
+          - kubelet={{ kubernetes_version_rhel_package }}
+          - kubeadm={{ kubernetes_version_rhel_package }}
+          - kubectl={{ kubernetes_version_rhel_package }}
+        state: present
+        allow_downgrade: true
+
+    - name: "Verrouillage des versions Kubernetes"
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    - name: "Activation et démarrage de kubelet"
+      systemd:
+        name: kubelet
+        enabled: true
+        state: started
