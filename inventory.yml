@@ -21,7 +21,9 @@ all:
           node_role: worker
   vars:
     ansible_python_interpreter: /usr/bin/python3
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    # Disable SSH ControlMaster multiplexing to avoid "Shared connection to ... closed" errors
+    # and add a reasonable ConnectTimeout and ServerAliveInterval for stability
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o ControlMaster=no -o ConnectTimeout=10 -o ServerAliveInterval=60"
     ansible_become: true
     ansible_become_method: sudo
     ansible_become_ask_pass: false
