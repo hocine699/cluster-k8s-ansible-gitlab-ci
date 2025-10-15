@@ -2,11 +2,22 @@
 - name: "Installation des composants Kubernetes"
   tags: kubernetes
   block:
-    - name: "Nettoyage des anciennes configurations Kubernetes"
+    - name: "Nettoyage complet et forcé des configurations Kubernetes"
       shell: |
-        rm -f /etc/apt/sources.list.d/kubernetes.list
-        rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-        rm -f /etc/apt/trusted.gpg.d/kubernetes*
+        # Nettoyage radical avec force
+        sudo rm -rf /etc/apt/sources.list.d/kubernetes*
+        sudo rm -rf /etc/apt/keyrings/kubernetes*
+        sudo rm -rf /etc/apt/trusted.gpg.d/kubernetes*
+        sudo rm -rf /usr/share/keyrings/kubernetes*
+        
+        # Nettoyage cache APT
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        
+        # Réinitialisation complète
+        sudo apt-get update || true
+        
+        echo "Nettoyage complet terminé"
       ignore_errors: true
 
     - name: "Création du répertoire keyrings"
@@ -34,11 +45,11 @@
           fi
         done
 
-    - name: "Ajout du dépôt Kubernetes"
-      apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
-        state: present
-        filename: kubernetes
+    - name: "Ajout du dépôt Kubernetes (méthode directe)"
+      shell: |
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        sudo chmod 644 /etc/apt/sources.list.d/kubernetes.list
+        echo "Dépôt Kubernetes ajouté"
 
     - name: "Mise à jour du cache APT"
       apt:
