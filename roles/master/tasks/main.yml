@@ -38,6 +38,14 @@
         mode: '0644'
         remote_src: true
 
+    - name: "Création du répertoire .kube pour root"
+      file:
+        path: /root/.kube
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
     - name: "Copie du fichier de configuration kubectl pour root"
       copy:
         src: /etc/kubernetes/admin.conf
@@ -46,14 +54,6 @@
         group: root
         mode: '0644'
         remote_src: true
-
-    - name: "Création du répertoire .kube pour root"
-      file:
-        path: /root/.kube
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
 
     - name: "Installation du plugin réseau Flannel"
       shell: kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
