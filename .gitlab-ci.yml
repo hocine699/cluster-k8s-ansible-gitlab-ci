@@ -337,7 +337,6 @@ deploy_monitoring:
     paths:
       - monitoring-config/
     expire_in: 1 week
-  when: manual
   only:
     - main
 
@@ -356,7 +355,6 @@ deploy_test_app:
     - echo "Dashboard Kubernetes accessible sur https://$K8S_MASTER_IP:30443"
   dependencies:
     - deploy_dashboard
-  when: manual
   only:
     - main
 
