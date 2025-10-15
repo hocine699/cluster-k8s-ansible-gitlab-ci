@@ -2,6 +2,7 @@
 # Compatible avec GitLab hébergé sur Synology NAS
 
 stages:
+  - cleanup
   - validate
   - prepare
   - deploy-cluster
@@ -59,6 +60,28 @@ variables:
           ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
       EOF
 
+# Stage 0: Nettoyage préalable
+cleanup_environment:
+  stage: cleanup
+  <<: *ansible_job
+  script:
+    - echo "Nettoyage complet des configurations Kubernetes existantes..."
+    - |
+      ansible all -i inventory.yml -m shell -a "
+        sudo rm -rf /etc/apt/sources.list.d/kubernetes* || true
+        sudo rm -rf /etc/apt/keyrings/kubernetes* || true
+        sudo rm -rf /etc/apt/trusted.gpg.d/kubernetes* || true
+        sudo rm -rf /usr/share/keyrings/kubernetes* || true
+        sudo apt-get clean || true
+        sudo rm -rf /var/lib/apt/lists/* || true
+        echo 'Nettoyage terminé sur $(hostname)'
+      "
+    - echo "Nettoyage terminé sur toutes les VMs"
+  allow_failure: true
+  only:
+    - main
+    - develop
+
 # Stage 1: Validation
 validate_syntax:
   stage: validate
@@ -66,6 +89,8 @@ validate_syntax:
   script:
     - ansible-playbook --syntax-check -i inventory.yml site.yml
     - ansible-lint site.yml || true  # Warning only
+  dependencies:
+    - cleanup_environment
   only:
     - merge_requests
     - main
@@ -76,6 +101,8 @@ validate_inventory:
   <<: *ansible_job
   script:
     - ansible all -i inventory.yml -m ping --timeout=10
+  dependencies:
+    - cleanup_environment
   only:
     - merge_requests
     - main
