@@ -66,18 +66,73 @@ cleanup_environment:
   stage: cleanup
   <<: *ansible_job
   script:
-    - echo "Nettoyage complet des configurations Kubernetes existantes..."
+    - echo "=== NETTOYAGE COMPLET DU CLUSTER KUBERNETES ==="
     - |
+      # Nettoyage complet de tous les composants Kubernetes
       ansible all -i inventory.yml -m shell -a "
+        echo 'Début du nettoyage sur $(hostname)...'
+        
+        # Arrêt des services Kubernetes
+        sudo systemctl stop kubelet || true
+        sudo systemctl stop docker || true
+        sudo systemctl stop containerd || true
+        
+        # Reset complet de kubeadm
+        sudo kubeadm reset -f || true
+        
+        # Suppression des configurations Kubernetes
+        sudo rm -rf /etc/kubernetes/ || true
+        sudo rm -rf ~/.kube/ || true
+        sudo rm -rf /var/lib/kubelet/ || true
+        sudo rm -rf /var/lib/etcd/ || true
+        sudo rm -rf /etc/cni/net.d/ || true
+        sudo rm -rf /opt/cni/bin/ || true
+        
+        # Nettoyage des conteneurs et images
+        sudo ctr -n k8s.io containers rm \$(sudo ctr -n k8s.io containers list -q) || true
+        sudo ctr -n k8s.io images rm \$(sudo ctr -n k8s.io images list -q) || true
+        sudo ctr namespaces rm k8s.io || true
+        
+        # Nettoyage des interfaces réseau
+        sudo ip link delete cni0 || true
+        sudo ip link delete flannel.1 || true
+        
+        # Nettoyage des repositories et clés APT
         sudo rm -rf /etc/apt/sources.list.d/kubernetes* || true
         sudo rm -rf /etc/apt/keyrings/kubernetes* || true
         sudo rm -rf /etc/apt/trusted.gpg.d/kubernetes* || true
         sudo rm -rf /usr/share/keyrings/kubernetes* || true
+        
+        # Nettoyage des iptables (attention!)
+        sudo iptables -F || true
+        sudo iptables -t nat -F || true
+        sudo iptables -t mangle -F || true
+        sudo iptables -X || true
+        
+        # Nettoyage APT
         sudo apt-get clean || true
         sudo rm -rf /var/lib/apt/lists/* || true
+        
+        # Redémarrage des services réseau
+        sudo systemctl restart containerd || true
+        sudo systemctl restart networkd-dispatcher || true
+        
         echo 'Nettoyage terminé sur $(hostname)'
       "
-    - echo "Nettoyage terminé sur toutes les VMs"
+    - echo "=== NETTOYAGE TERMINÉ SUR TOUTES LES VMs ==="
+    - echo "Attente de stabilisation des services..."
+    - sleep 10
+    - echo "=== VÉRIFICATION POST-NETTOYAGE ==="
+    - |
+      ansible all -i inventory.yml -m shell -a "
+        echo 'Vérification sur $(hostname):'
+        echo '- Kubelet: '$(sudo systemctl is-active kubelet || echo 'arrêté')
+        echo '- Containerd: '$(sudo systemctl is-active containerd || echo 'arrêté')
+        echo '- Kubernetes configs: '$(ls /etc/kubernetes/ 2>/dev/null | wc -l)' fichiers'
+        echo '- Conteneurs actifs: '$(sudo ctr -n k8s.io containers list 2>/dev/null | wc -l)' conteneurs'
+        echo 'Prêt pour nouveau déploiement'
+      " || true
+    - echo "=== ENVIRONNEMENT NETTOYÉ ET PRÊT ==="
   allow_failure: true
   only:
     - main

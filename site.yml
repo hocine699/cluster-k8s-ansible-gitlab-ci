@@ -27,6 +27,8 @@
   roles:
     - worker
 
+- import_playbook: post-install.yml
+
 - name: "Vérification finale du cluster"
   hosts: all
   become: true
