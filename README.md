@@ -64,12 +64,23 @@ kubectl get svc nginx-test-service
 curl http://192.168.1.72:30090
 ```
 
-## 📦 Application de test
+## 📦 Applications disponibles
 
-**Nginx** : 3 replicas, service NodePort 30090
+### **Nginx (test-deployment.yaml)**
+- **Type** : Serveur web de test
+- **Replicas** : 3 pods
+- **Port** : 30090
 - **Ressources** : 64Mi-128Mi RAM, 250m-500m CPU
 - **Accès** : http://192.168.1.72:30090
-- **Port conflit** : 30090 (évite conflit avec kube-state-metrics sur 30080)
+- **Déclencheur** : branches `test-*`
+
+### **Redis (redis-deployment.yaml)**
+- **Type** : Cache/Base de données en mémoire
+- **Replicas** : 1 pod
+- **Port** : 30379
+- **Ressources** : 64Mi-128Mi RAM, 250m-500m CPU
+- **Accès** : redis-cli -h 192.168.1.72 -p 30379
+- **Déclencheur** : branches `redis-*`
 
 ## 🛠️ Architecture Pipeline
 
