@@ -48,6 +48,22 @@ variables:
       fi
 
 # ================================================================================================
+# JOB DE TEST SANS SSH - Test direct kubectl
+# ================================================================================================
+test_kubectl_direct:
+  stage: deploy-app
+  image: mon-runner-devops:latest
+  tags:
+    - synology
+  only:
+    - /^test-.*$/
+  script:
+    - echo "=== TEST DIRECT KUBECTL ==="
+    - echo "Tentative connexion directe au cluster..."
+    - kubectl --server=https://$K8S_MASTER_IP:6443 --insecure-skip-tls-verify get nodes || echo "Connexion directe échouée"
+    - echo "Si ça marche, on peut éviter SSH !"
+
+# ================================================================================================
 # JOB DE TEST APPLICATIF - Nginx sur cluster existant
 # ================================================================================================
 deploy_test_app:
