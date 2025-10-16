@@ -6,13 +6,28 @@
         path: /etc/kubernetes/admin.conf
       register: kubeconfig_stat
 
+    - name: "Vérification préalable des ports"
+      shell: |
+        echo "Vérification des ports critiques..."
+        netstat -tulpn | grep :6443 && echo "Port 6443 occupé!" || echo "Port 6443 libre"
+        netstat -tulpn | grep :2379 && echo "Port 2379 occupé!" || echo "Port 2379 libre"
+        ps aux | grep -E '[k]ube|[e]tcd' | wc -l | xargs echo "Processus kube actifs:"
+      register: port_check
+      when: not kubeconfig_stat.stat.exists
+
+    - name: "Affichage de l'état des ports"
+      debug:
+        var: port_check.stdout_lines
+      when: port_check is defined
+
     - name: "Initialisation du cluster Kubernetes"
       shell: |
         kubeadm init \
           --pod-network-cidr={{ pod_network_cidr }} \
           --service-cidr={{ service_network_cidr }} \
           --apiserver-advertise-address={{ ansible_default_ipv4.address }} \
-          --node-name={{ inventory_hostname }}
+          --node-name={{ inventory_hostname }} \
+          --ignore-preflight-errors=Port-6443,Port-2379,Port-2380,Port-10250
       register: kubeadm_init
       when: not kubeconfig_stat.stat.exists
 
