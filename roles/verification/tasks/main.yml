@@ -7,14 +7,14 @@
   until: ready_nodes.stdout|int >= groups['all']|length
   retries: 30
   delay: 10
-  delegate_to: "{{ groups['master'][0] }}"
+  delegate_to: "{{ groups['masters'][0] }}"
 
 - name: "Affichage de l'état des nœuds"
   shell: kubectl get nodes -o wide
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: nodes_status
-  delegate_to: "{{ groups['master'][0] }}"
+  delegate_to: "{{ groups['masters'][0] }}"
 
 - name: "Résultat - État des nœuds"
   debug:
@@ -25,7 +25,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: system_pods
-  delegate_to: "{{ groups['master'][0] }}"
+  delegate_to: "{{ groups['masters'][0] }}"
 
 - name: "Résultat - Pods système"
   debug:
@@ -36,7 +36,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: dashboard_pods
-  delegate_to: "{{ groups['master'][0] }}"
+  delegate_to: "{{ groups['masters'][0] }}"
   ignore_errors: true
 
 - name: "Résultat - État du dashboard"
@@ -55,7 +55,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: dashboard_token
-  delegate_to: "{{ groups['master'][0] }}"
+  delegate_to: "{{ groups['masters'][0] }}"
   ignore_errors: true
 
 - name: "Sauvegarde du token dashboard"
@@ -65,12 +65,12 @@
   when: 
     - dashboard_token.rc == 0 
     - dashboard_token.stdout != "Token not found - ServiceAccount may not be created yet"
-  delegate_to: "{{ groups['master'][0] }}"
+  delegate_to: "{{ groups['masters'][0] }}"
 
 - name: "Récupération des informations de connexion"
   shell: |
     echo "=== INFORMATIONS DU CLUSTER ===" > dashboard-info.txt
-    echo "Dashboard URL: https://{{ groups['master'][0] }}:30443" >> dashboard-info.txt
+    echo "Dashboard URL: https://{{ hostvars[groups['masters'][0]]['ansible_host'] }}:30443" >> dashboard-info.txt
     echo "Token admin:" >> dashboard-info.txt
     echo "{{ dashboard_token.stdout }}" >> dashboard-info.txt
     echo "" >> dashboard-info.txt
@@ -78,7 +78,7 @@
     kubectl get nodes -o wide >> dashboard-info.txt
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  delegate_to: "{{ groups['master'][0] }}"
+  delegate_to: "{{ groups['masters'][0] }}"
   when: 
     - dashboard_token.rc == 0
     - dashboard_token.stdout != "Token not found - ServiceAccount may not be created yet"
