@@ -117,12 +117,19 @@
       when: not kubeconfig_stat.stat.exists
 
     - name: "Déploiement du Kubernetes Dashboard"
-      shell: |
-        kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
-        # Modification du service pour NodePort
-        kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard -p "{\"spec\":{\"type\":\"NodePort\",\"ports\":[{\"port\":443,\"targetPort\":8443,\"nodePort\":30443}]}}"
-        # Permettre l'exécution sur le master pour les tests (enlever taint)
-        kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+      shell: kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      when: not kubeconfig_stat.stat.exists
+
+    - name: "Configuration du service Dashboard en NodePort"
+      shell: kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard -p '{"spec":{"type":"NodePort","ports":[{"port":443,"targetPort":8443,"nodePort":30443}]}}'
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      when: not kubeconfig_stat.stat.exists
+
+    - name: "Suppression du taint sur master pour permettre scheduling pods"
+      shell: kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
       environment:
         KUBECONFIG: /etc/kubernetes/admin.conf
       when: not kubeconfig_stat.stat.exists
