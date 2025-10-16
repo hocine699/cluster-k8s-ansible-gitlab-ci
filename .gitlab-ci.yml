@@ -70,7 +70,7 @@ cleanup_environment:
     - |
       # Nettoyage complet de tous les composants Kubernetes
       ansible all -i inventory.yml -m shell -a "
-        echo 'Début du nettoyage sur $(hostname)...'
+        echo 'Début du nettoyage sur \$(hostname)...'
         
         # Arrêt forcé de tous les processus Kubernetes
         sudo pkill -f kube-apiserver || true
@@ -105,10 +105,9 @@ cleanup_environment:
         sudo rm -rf /var/lib/etcd/ || true
         sudo rm -rf /etc/cni/net.d/ || true
         sudo rm -rf /opt/cni/bin/ || true
-        
-        # Nettoyage des conteneurs et images
-        sudo ctr -n k8s.io containers rm \$(sudo ctr -n k8s.io containers list -q) || true
-        sudo ctr -n k8s.io images rm \$(sudo ctr -n k8s.io images list -q) || true
+        # Nettoyage des conteneurs et images (simplifié)
+        sudo ctr -n k8s.io containers list | tail -n +2 | awk '{print \$1}' | xargs -r sudo ctr -n k8s.io containers rm || true
+        sudo ctr -n k8s.io images list | tail -n +2 | awk '{print \$1}' | xargs -r sudo ctr -n k8s.io images rm || true
         sudo ctr namespaces rm k8s.io || true
         
         # Nettoyage des interfaces réseau
@@ -136,7 +135,7 @@ cleanup_environment:
         sudo systemctl restart containerd || true
         sudo systemctl restart networkd-dispatcher || true
         
-        echo 'Nettoyage terminé sur $(hostname)'
+        echo 'Nettoyage terminé sur \$(hostname)'
       "
     - echo "=== NETTOYAGE TERMINÉ SUR TOUTES LES VMs ==="
     - echo "Attente de stabilisation des services..."
@@ -144,14 +143,14 @@ cleanup_environment:
     - echo "=== VÉRIFICATION POST-NETTOYAGE ==="
     - |
       ansible all -i inventory.yml -m shell -a "
-        echo 'Vérification sur $(hostname):'
-        echo '- Kubelet: '$(sudo systemctl is-active kubelet || echo 'arrêté')
-        echo '- Containerd: '$(sudo systemctl is-active containerd || echo 'redémarré')
-        echo '- Kubernetes configs: '$(ls /etc/kubernetes/ 2>/dev/null | wc -l)' fichiers'
-        echo '- Conteneurs actifs: '$(sudo ctr -n k8s.io containers list 2>/dev/null | wc -l)' conteneurs'
-        echo '- Port 6443: '$(sudo netstat -tulpn | grep :6443 || echo 'libre')
-        echo '- Port 2379 (etcd): '$(sudo netstat -tulpn | grep :2379 || echo 'libre') 
-        echo '- Processus kube: '$(ps aux | grep -E '[k]ube|[e]tcd' | wc -l)' processus'
+        echo 'Vérification sur \$(hostname):'
+        echo '- Kubelet: '\$(sudo systemctl is-active kubelet || echo 'arrêté')
+        echo '- Containerd: '\$(sudo systemctl is-active containerd || echo 'redémarré')
+        echo '- Kubernetes configs: '\$(ls /etc/kubernetes/ 2>/dev/null | wc -l)' fichiers'
+        echo '- Conteneurs actifs: '\$(sudo ctr -n k8s.io containers list 2>/dev/null | wc -l)' conteneurs'
+        echo '- Port 6443: '\$(sudo netstat -tulpn | grep :6443 || echo 'libre')
+        echo '- Port 2379 (etcd): '\$(sudo netstat -tulpn | grep :2379 || echo 'libre') 
+        echo '- Processus kube: '\$(ps aux | grep -E '[k]ube|[e]tcd' | wc -l)' processus'
         echo 'Prêt pour nouveau déploiement'
       " || true
     - echo "=== ENVIRONNEMENT NETTOYÉ ET PRÊT ==="
