@@ -120,7 +120,7 @@
       shell: |
         kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
         # Modification du service pour NodePort
-        kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard -p '{"spec":{"type":"NodePort","ports":[{"port":443,"targetPort":8443,"nodePort":30443}]}}'
+        kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard -p "{\"spec\":{\"type\":\"NodePort\",\"ports\":[{\"port\":443,\"targetPort\":8443,\"nodePort\":30443}]}}"
         # Permettre l'exécution sur le master pour les tests (enlever taint)
         kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
       environment:
