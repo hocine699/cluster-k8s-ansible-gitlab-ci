@@ -39,9 +39,9 @@ deploy_test_app:
   only:
     - /^test-.*$/  # Branches test-* uniquement
   script:
-    - echo "=== DEPLOIEMENT APPLICATION NGINX ==="
+    - echo "=== DEPLOIEMENT TOUTES APPLICATIONS ==="
     - echo "Cluster cible - $K8S_MASTER_IP"
-    - echo "Application - nginx-test avec 3 replicas sur port 30090"
+    - echo "Applications - Nginx (port 30090) + Redis (port 30379)"
     
     # Test connectivité cluster
     - echo "=== Test connectivite ==="
@@ -52,16 +52,22 @@ deploy_test_app:
     - echo "=== Recuperation kubeconfig ==="
     - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config || echo "SSH failed - deploiement manuel requis"
     
-    # Affichage manifest
-    - echo "=== Manifest application ==="
+    # Affichage manifests
+    - echo "=== Manifests applications ==="
+    - echo "--- NGINX ---"
     - cat test-deployment.yaml
+    - echo ""
+    - echo "--- REDIS ---"
+    - cat redis-deployment.yaml
     
     # Instructions déploiement
     - echo "=== Instructions deploiement ==="
     - echo "1. kubectl apply -f test-deployment.yaml"
-    - echo "2. kubectl get pods -l app=nginx-test"
-    - echo "3. kubectl get svc nginx-test-service"
-    - echo "4. Acces sur http://$K8S_MASTER_IP:30090"
+    - echo "2. kubectl apply -f redis-deployment.yaml"
+    - echo "3. kubectl get pods"
+    - echo "4. kubectl get svc"
+    - echo "5. Nginx sur http://$K8S_MASTER_IP:30090"
+    - echo "6. Redis sur port 30379"
     - echo "=== FIN ==="
 
 # ================================================================================================
@@ -87,43 +93,9 @@ deploy_app_manual:
     - echo "Application accessible sur http://$K8S_MASTER_IP:30090"
 
 # ================================================================================================
-# JOB REDIS - Déploiement application Redis
+# JOB MANUEL - Déploiement TOUTES applications avec kubectl
 # ================================================================================================
-deploy_redis_app:
-  stage: deploy-app
-  <<: *app_deploy
-  only:
-    - /^redis-.*$/  # Branches redis-* uniquement
-  script:
-    - echo "=== DEPLOIEMENT APPLICATION REDIS ==="
-    - echo "Cluster cible - $K8S_MASTER_IP"
-    - echo "Application - Redis cache sur port 30379"
-    
-    # Test connectivité cluster
-    - echo "=== Test connectivite ==="
-    - ping -c 2 $K8S_MASTER_IP || echo "Ping failed"
-    - nc -zv $K8S_MASTER_IP 6443 || echo "API server inaccessible"
-    
-    # Récupération kubeconfig
-    - echo "=== Recuperation kubeconfig ==="
-    - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config || echo "SSH failed - deploiement manuel requis"
-    
-    # Affichage manifest
-    - echo "=== Manifest Redis ==="
-    - cat redis-deployment.yaml
-    
-    # Instructions déploiement
-    - echo "=== Instructions deploiement ==="
-    - echo "1. kubectl apply -f redis-deployment.yaml"
-    - echo "2. kubectl get pods -l app=redis-app"
-    - echo "3. kubectl get svc redis-service"
-    - echo "4. Test Redis sur port 30379"
-    - echo "=== FIN ==="
-
-# ================================================================================================
-# JOB REDIS MANUEL - Déploiement Redis avec kubectl
-# ================================================================================================
-deploy_redis_manual:
+deploy_all_apps_manual:
   stage: deploy-app
   <<: *app_deploy
   only:
@@ -131,14 +103,20 @@ deploy_redis_manual:
   when: manual
   allow_failure: true
   script:
-    - echo "=== DEPLOIEMENT MANUEL REDIS ==="
+    - echo "=== DEPLOIEMENT MANUEL TOUTES APPLICATIONS ==="
     - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    # Nettoyage
+    - kubectl delete deployment nginx-test --ignore-not-found=true
+    - kubectl delete service nginx-test-service --ignore-not-found=true
     - kubectl delete deployment redis-app --ignore-not-found=true
     - kubectl delete service redis-service --ignore-not-found=true
     - sleep 5
+    # Déploiement
+    - kubectl apply -f test-deployment.yaml
     - kubectl apply -f redis-deployment.yaml
     - sleep 30
-    - kubectl get pods -l app=redis-app
-    - kubectl get svc redis-service
+    # Vérification
+    - kubectl get pods
+    - kubectl get svc
+    - echo "Nginx accessible sur http://$K8S_MASTER_IP:30090"
     - echo "Redis accessible sur port 30379"
-    - echo "Test avec redis-cli -h $K8S_MASTER_IP -p 30379"
