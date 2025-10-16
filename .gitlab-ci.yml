@@ -76,8 +76,8 @@ variables:
 cleanup_environment:
   stage: cleanup
   <<: *ansible_job
-  rules:
-    - if: $PIPELINE_TYPE != "test-only"
+  except:
+    - /^test-.*$/
   script:
     - echo "=== NETTOYAGE COMPLET DU CLUSTER KUBERNETES ==="
     - |
@@ -166,9 +166,6 @@ cleanup_environment:
     - ansible all -i inventory.yml -m copy -a "src=verify_cleanup.sh dest=/tmp/verify_cleanup.sh mode=0755"
     - ansible all -i inventory.yml -m shell -a "/tmp/verify_cleanup.sh" || true
   allow_failure: true
-  only:
-    - main
-    - develop
 
 # Stage 1: Validation
 validate_syntax:
@@ -485,17 +482,10 @@ deploy_monitoring:
 deploy_test_app:
   stage: deploy-app
   <<: *ansible_job
-  rules:
-    # Exécution automatique pour branches test-* (sans dépendances)
-    - if: $PIPELINE_TYPE == "test-only"
-      variables:
-        SKIP_DEPENDENCIES: "true"
-    # Exécution manuelle pour main (avec dépendances)
-    - if: $CI_COMMIT_REF_NAME == "main"
-      when: manual
-      allow_failure: true
+  only:
+    - /^test-.*$/
   script:
-    - echo "Déploiement de l'application de test..."
+    - echo "Déploiement automatique de l'application de test..."
     - mkdir -p ~/.kube
     - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
     # Nettoyage des anciens services pour éviter les conflits de ports
@@ -508,6 +498,30 @@ deploy_test_app:
     - kubectl get services nginx-test-service
     - echo "Application nginx accessible sur http://$K8S_MASTER_IP:30090"
     - echo "Dashboard Kubernetes accessible sur https://$K8S_MASTER_IP:30443"
+
+deploy_test_app_manual:
+  stage: deploy-app
+  <<: *ansible_job
+  only:
+    - main
+  when: manual
+  allow_failure: true
+  script:
+    - echo "Déploiement manuel de l'application de test..."
+    - mkdir -p ~/.kube
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    # Nettoyage des anciens services pour éviter les conflits de ports
+    - kubectl delete deployment nginx-test --ignore-not-found=true
+    - kubectl delete service nginx-test-service --ignore-not-found=true
+    - sleep 10
+    - kubectl apply -f test-deployment.yaml
+    - sleep 60
+    - kubectl get pods -l app=nginx-test
+    - kubectl get services nginx-test-service
+    - echo "Application nginx accessible sur http://$K8S_MASTER_IP:30090"
+    - echo "Dashboard Kubernetes accessible sur https://$K8S_MASTER_IP:30443"
+  dependencies:
+    - deploy_dashboard
 
 # Job de nettoyage manuel
 cleanup_cluster:
