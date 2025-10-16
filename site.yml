@@ -21,6 +21,28 @@
   roles:
     - master
 
+- name: "Attente que le master soit complètement prêt"
+  hosts: masters
+  become: true
+  tasks:
+    - name: "Vérification que le master est Ready"
+      shell: kubectl get nodes --no-headers | grep "Ready"
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: master_ready
+      until: master_ready.rc == 0
+      retries: 10
+      delay: 15
+
+    - name: "Vérification que Flannel est opérationnel"
+      shell: kubectl get pods -n kube-flannel --no-headers | grep "Running" | wc -l
+      environment:
+        KUBECONFIG: /etc/kubernetes/admin.conf
+      register: flannel_running
+      until: flannel_running.stdout|int >= 1
+      retries: 10
+      delay: 15
+
 - name: "Déploiement des workers"
   hosts: workers
   become: true
