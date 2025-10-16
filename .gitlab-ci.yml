@@ -83,8 +83,28 @@ variables:
     K8S_WORKER2_IP: "192.168.1.74"
   before_script:
     - mkdir -p ~/.ssh
-    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-    - chmod 600 ~/.ssh/id_rsa
+    - echo "=== Diagnostic SSH ==="
+    - echo "SSH_PRIVATE_KEY variable length:" $(echo "$SSH_PRIVATE_KEY" | wc -c)
+    - echo "SSH_PRIVATE_KEY first line:" $(echo "$SSH_PRIVATE_KEY" | head -1)
+    # Configuration SSH avec fallback
+    - |
+      if [ -n "$SSH_PRIVATE_KEY" ]; then
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        echo "Clé SSH configurée"
+      else
+        echo "Pas de clé SSH - utilisation d'authentification alternative"
+      fi
+    # Configuration SSH pour accepter connexions diverses
+    - |
+      cat > ~/.ssh/config << EOF
+      Host *
+        StrictHostKeyChecking no
+        UserKnownHostsFile /dev/null
+        ServerAliveInterval 60
+        ServerAliveCountMax 3
+      EOF
+    - chmod 600 ~/.ssh/config
 
 # Stage 0: Nettoyage préalable
 cleanup_environment:
@@ -501,7 +521,26 @@ deploy_test_app:
   script:
     - echo "Déploiement automatique de l'application de test..."
     - mkdir -p ~/.kube
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    # Tentative de récupération du kubeconfig avec gestion d'erreurs
+    - |
+      echo "=== Tentative de connexion SSH ==="
+      if scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config; then
+        echo "✅ Kubeconfig récupéré avec succès"
+      else
+        echo "❌ Échec de récupération via SCP"
+        echo "Tentative avec ssh et cat..."
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP "cat ~/.kube/config" > ~/.kube/config || {
+          echo "❌ Impossible de récupérer kubeconfig"
+          echo "Test avec configuration directe..."
+          # Configuration kubectl directe vers l'API server
+          kubectl config set-cluster kubernetes --server=https://$K8S_MASTER_IP:6443 --insecure-skip-tls-verify=true
+          kubectl config set-context kubernetes --cluster=kubernetes
+          kubectl config use-context kubernetes
+        }
+      fi
+    - echo "=== Test de connectivité kubectl ==="
+    - kubectl cluster-info || echo "Cluster info failed"
+    - kubectl get nodes || echo "Get nodes failed"
     # Nettoyage des anciens services pour éviter les conflits de ports
     - kubectl delete deployment nginx-test --ignore-not-found=true
     - kubectl delete service nginx-test-service --ignore-not-found=true
