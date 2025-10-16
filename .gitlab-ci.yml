@@ -50,25 +50,31 @@ deploy_test_app:
     
     # Récupération kubeconfig
     - echo "=== Recuperation kubeconfig ==="
-    - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config || echo "SSH failed - deploiement manuel requis"
+    - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
     
-    # Affichage manifests
-    - echo "=== Manifests applications ==="
-    - echo "--- NGINX ---"
-    - cat test-deployment.yaml
+    # DEPLOIEMENT REEL des applications
+    - echo "=== DEPLOIEMENT REEL ==="
+    - echo "Nettoyage des anciennes versions..."
+    - kubectl delete deployment nginx-test --ignore-not-found=true
+    - kubectl delete service nginx-test-service --ignore-not-found=true
+    - kubectl delete deployment redis-app --ignore-not-found=true
+    - kubectl delete service redis-service --ignore-not-found=true
+    - sleep 5
+    
+    - echo "Deploiement Nginx..."
+    - kubectl apply -f test-deployment.yaml
+    - echo "Deploiement Redis..."
+    - kubectl apply -f redis-deployment.yaml
+    - sleep 30
+    
+    # Vérification du déploiement
+    - echo "=== VERIFICATION ==="
+    - kubectl get pods
+    - kubectl get svc
     - echo ""
-    - echo "--- REDIS ---"
-    - cat redis-deployment.yaml
-    
-    # Instructions déploiement
-    - echo "=== Instructions deploiement ==="
-    - echo "1. kubectl apply -f test-deployment.yaml"
-    - echo "2. kubectl apply -f redis-deployment.yaml"
-    - echo "3. kubectl get pods"
-    - echo "4. kubectl get svc"
-    - echo "5. Nginx sur http://$K8S_MASTER_IP:30090"
-    - echo "6. Redis sur port 30379"
-    - echo "=== FIN ==="
+    - echo "=== ACCES APPLICATIONS ==="
+    - echo "Nginx accessible sur http://$K8S_MASTER_IP:30090"
+    - echo "Redis accessible sur port 30379"
 
 # ================================================================================================
 # JOB MANUEL - Déploiement sur main avec dépendances
