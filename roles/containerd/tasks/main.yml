@@ -33,3 +33,44 @@
       systemd:
         name: containerd
         state: started
+
+    - name: "Création du répertoire CNI plugins"
+      file:
+        path: /opt/cni/bin
+        state: directory
+        mode: '0755'
+
+    - name: "Téléchargement des plugins CNI"
+      get_url:
+        url: "https://github.com/containernetworking/plugins/releases/download/v1.3.0/cni-plugins-linux-amd64-v1.3.0.tgz"
+        dest: "/tmp/cni-plugins-linux-amd64-v1.3.0.tgz"
+        timeout: 120
+        mode: '0644'
+      register: cni_download
+      retries: 3
+      delay: 5
+
+    - name: "Extraction des plugins CNI"
+      unarchive:
+        src: "/tmp/cni-plugins-linux-amd64-v1.3.0.tgz"
+        dest: "/opt/cni/bin"
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0755'
+      when: cni_download is succeeded
+
+    - name: "Vérification de l'installation des plugins CNI"
+      stat:
+        path: "/opt/cni/bin/loopback"
+      register: loopback_plugin
+
+    - name: "Affichage des plugins CNI installés"
+      command: ls -la /opt/cni/bin/
+      register: cni_plugins_list
+      when: loopback_plugin.stat.exists
+
+    - name: "Liste des plugins CNI"
+      debug:
+        var: cni_plugins_list.stdout_lines
+      when: loopback_plugin.stat.exists

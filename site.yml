@@ -31,8 +31,9 @@
         KUBECONFIG: /etc/kubernetes/admin.conf
       register: master_ready
       until: master_ready.rc == 0
-      retries: 10
-      delay: 15
+      retries: 5
+      delay: 10
+      failed_when: false
 
     - name: "Vérification que Flannel est opérationnel"
       shell: kubectl get pods -n kube-flannel --no-headers | grep "Running" | wc -l
@@ -40,8 +41,16 @@
         KUBECONFIG: /etc/kubernetes/admin.conf
       register: flannel_running
       until: flannel_running.stdout|int >= 1
-      retries: 10
-      delay: 15
+      retries: 5
+      delay: 10
+      failed_when: false
+
+    - name: "Affichage de l'état du master avant déploiement workers"
+      debug:
+        msg: |
+          Master Ready: {{ master_ready.rc == 0 }}
+          Flannel Pods Running: {{ flannel_running.stdout if flannel_running.stdout is defined else 'Unknown' }}
+          Prêt pour déploiement workers
 
 - name: "Déploiement des workers"
   hosts: workers

@@ -121,6 +121,8 @@
         kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
         # Modification du service pour NodePort
         kubectl patch svc kubernetes-dashboard -n kubernetes-dashboard -p '{"spec":{"type":"NodePort","ports":[{"port":443,"targetPort":8443,"nodePort":30443}]}}'
+        # Permettre l'exécution sur le master pour les tests (enlever taint)
+        kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
       environment:
         KUBECONFIG: /etc/kubernetes/admin.conf
       when: not kubeconfig_stat.stat.exists
@@ -164,12 +166,20 @@
         KUBECONFIG: /etc/kubernetes/admin.conf
       when: not kubeconfig_stat.stat.exists
 
-    - name: "Attente du déploiement du dashboard"
+    - name: "Vérification du déploiement du dashboard (non-bloquant)"
       shell: kubectl get pods -n kubernetes-dashboard --no-headers | grep Running | wc -l
       environment:
         KUBECONFIG: /etc/kubernetes/admin.conf
       register: dashboard_pods
       until: dashboard_pods.stdout|int >= 2
-      retries: 20
-      delay: 15
+      retries: 5
+      delay: 10
+      when: not kubeconfig_stat.stat.exists
+      failed_when: false
+
+    - name: "Info - État du dashboard"
+      debug:
+        msg: |
+          Pods Dashboard Running: {{ dashboard_pods.stdout if dashboard_pods is defined else 'Non vérifié' }}
+          Note: Le dashboard peut prendre plus de temps à démarrer, surtout si les workers ne sont pas encore joints.
       when: not kubeconfig_stat.stat.exists

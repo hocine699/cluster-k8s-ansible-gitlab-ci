@@ -180,3 +180,39 @@
     KUBECONFIG: /etc/kubernetes/admin.conf
   delegate_to: "{{ groups['masters'][0] }}"
   ignore_errors: true
+
+- name: "Vérification des plugins CNI sur tous les nœuds"
+  shell: ls -la /opt/cni/bin/ | head -10
+  register: cni_plugins_check
+  ignore_errors: true
+
+- name: "Résultat - Plugins CNI installés"
+  debug:
+    msg: |
+      === PLUGINS CNI SUR {{ inventory_hostname }} ===
+      {{ cni_plugins_check.stdout if cni_plugins_check.rc == 0 else 'Erreur: ' + cni_plugins_check.stderr }}
+
+- name: "Vérification spécifique du plugin loopback"
+  stat:
+    path: "/opt/cni/bin/loopback"
+  register: loopback_check
+
+- name: "Résultat - Plugin loopback (critique pour les pods)"
+  debug:
+    msg: |
+      Plugin loopback sur {{ inventory_hostname }}: {{ 'PRÉSENT' if loopback_check.stat.exists else 'MANQUANT - PROBLÈME CRITIQUE!' }}
+
+- name: "Diagnostic final - État des pods après installation CNI"
+  shell: kubectl get pods --all-namespaces -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: final_pods_check
+  delegate_to: "{{ groups['masters'][0] }}"
+  ignore_errors: true
+
+- name: "Résultat final - Tous les pods"
+  debug:
+    msg: |
+      === ÉTAT FINAL DES PODS ===
+      {{ final_pods_check.stdout if final_pods_check.rc == 0 else 'Erreur kubectl: ' + final_pods_check.stderr }}
+  delegate_to: "{{ groups['masters'][0] }}"
