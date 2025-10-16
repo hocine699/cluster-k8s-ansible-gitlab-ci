@@ -22,12 +22,17 @@ variables:
     - mkdir -p ~/.ssh ~/.kube
     # Configuration SSH si disponible
     - |
-      if [ -f "$SSH_PRIVATE_KEY" ]; then
-        cp "$SSH_PRIVATE_KEY" ~/.ssh/id_rsa
+      if [ -n "$SSH_PRIVATE_KEY" ]; then
+        echo "SSH_PRIVATE_KEY trouvée, configuration..."
+        echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-      elif [ -n "$SSH_PRIVATE_KEY" ]; then
-        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
+        eval "$(ssh-agent -s)"
+        ssh-add ~/.ssh/id_rsa
+        echo "SSH configuré avec succès"
+      else
+        echo "ERROR: Variable SSH_PRIVATE_KEY non trouvée!"
+        echo "Allez dans Settings > CI/CD > Variables pour l'ajouter"
+        exit 1
       fi
 
 # ================================================================================================
@@ -45,8 +50,8 @@ deploy_test_app:
     
     # Test connectivité cluster
     - echo "=== Test connectivite ==="
-    - ping -c 2 $K8S_MASTER_IP || echo "Ping failed"
-    - nc -zv $K8S_MASTER_IP 6443 || echo "API server inaccessible"
+    - ping -c 2 $K8S_MASTER_IP || echo "Ping failed but continuing..."
+    - nc -zv $K8S_MASTER_IP 6443 || echo "API server test failed but continuing..."
     
     # Récupération kubeconfig
     - echo "=== Recuperation kubeconfig ==="
