@@ -1,581 +1,87 @@
-# Pipeline GitLab CI pour déploiement cluster Kubernetes
-# Compatible avec GitLab hébergé sur Synology NAS
-
-workflow:
-  rules:
-    # Pipeline complet pour main
-    - if: $CI_COMMIT_REF_NAME == "main"
-    # Pipeline test seulement pour branches test-*
-    - if: $CI_COMMIT_REF_NAME =~ /^test-.*$/
-      variables:
-        PIPELINE_TYPE: "test-only"
-    # Par défaut, autoriser le pipeline
-    - when: always
+# ================================================================================================
+# PIPELINE APPLICATIF MINIMAL - Déploiement d'applications sur Kubernetes existant
+# ================================================================================================
+# Ce pipeline ne déploie PAS d'infrastructure Kubernetes
+# Il déploie uniquement des applications sur un cluster K8s déjà existant
 
 stages:
-  - cleanup
-  - validate
-  - prepare
-  - deploy-cluster
-  - verify
   - deploy-app
-  - maintenance
 
 variables:
-  ANSIBLE_HOST_KEY_CHECKING: "False"
-  ANSIBLE_FORCE_COLOR: "True"
-  ANSIBLE_STDOUT_CALLBACK: "yaml"
-  # Variables à définir dans GitLab CI/CD Variables
-  # K8S_MASTER_IP, K8S_WORKER1_IP, K8S_WORKER2_IP
-  # SSH_PRIVATE_KEY (base64 encoded)
+  # IPs du cluster Kubernetes existant
+  K8S_MASTER_IP: "192.168.1.72"
+  K8S_WORKER1_IP: "192.168.1.73"
+  K8S_WORKER2_IP: "192.168.1.74"
 
-# Template pour les jobs Ansible avec votre image personnalisée
-.ansible_job: &ansible_job
+# Template minimal pour déploiement applicatif
+.app_deploy: &app_deploy
   image: mon-runner-devops:latest
   tags:
     - synology
   before_script:
-    # Vos dépendances sont déjà dans l'image mon-runner-devops
-    - mkdir -p ~/.ssh
-    # Utilisation directe de la clé SSH depuis GitLab Variables (pas de base64)
-    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-    - chmod 600 ~/.ssh/id_rsa
-    - ssh-keyscan -H $K8S_MASTER_IP >> ~/.ssh/known_hosts
-    - ssh-keyscan -H $K8S_WORKER1_IP >> ~/.ssh/known_hosts
-    - ssh-keyscan -H $K8S_WORKER2_IP >> ~/.ssh/known_hosts
-    # Générer l'inventaire dynamique avec les variables CI
-    - |
-      cat > inventory.yml << EOF
-      all:
-        children:
-          masters:
-            hosts:
-              k8s-master-01:
-                ansible_host: $K8S_MASTER_IP
-                ansible_user: hocine
-                ansible_ssh_private_key_file: ~/.ssh/id_rsa
-                node_role: master
-          workers:
-            hosts:
-              k8s-worker-01:
-                ansible_host: $K8S_WORKER1_IP
-                ansible_user: hocine
-                ansible_ssh_private_key_file: ~/.ssh/id_rsa
-                node_role: worker
-              k8s-worker-02:
-                ansible_host: $K8S_WORKER2_IP
-                ansible_user: hocine
-                ansible_ssh_private_key_file: ~/.ssh/id_rsa
-                node_role: worker
-        vars:
-          ansible_python_interpreter: /usr/bin/python3
-          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
-      EOF
-
-# Template simplifié pour les tests (sans inventory Ansible)
-.test_job: &test_job
-  image: mon-runner-devops:latest
-  tags:
-    - synology
-  variables:
-    K8S_MASTER_IP: "192.168.1.72"
-    K8S_WORKER1_IP: "192.168.1.73" 
-    K8S_WORKER2_IP: "192.168.1.74"
-  before_script:
-    - mkdir -p ~/.ssh
-    - echo "=== Diagnostic SSH ==="
-    # Support pour variable de type "File" ET "Variable"
+    - mkdir -p ~/.ssh ~/.kube
+    # Configuration SSH si disponible
     - |
       if [ -f "$SSH_PRIVATE_KEY" ]; then
-        echo "SSH_PRIVATE_KEY détectée comme fichier (type File)"
         cp "$SSH_PRIVATE_KEY" ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        echo "Clé SSH copiée depuis fichier: $(wc -l < ~/.ssh/id_rsa) lignes"
       elif [ -n "$SSH_PRIVATE_KEY" ]; then
-        echo "SSH_PRIVATE_KEY détectée comme variable (type Variable)"
         echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
         chmod 600 ~/.ssh/id_rsa
-        echo "Clé SSH écrite: $(echo "$SSH_PRIVATE_KEY" | wc -c) caractères"
-      else
-        echo "❌ SSH_PRIVATE_KEY non définie"
-        echo "Configurez la variable dans GitLab CI/CD Variables"
       fi
-    # Configuration SSH pour accepter connexions diverses
-    - |
-      cat > ~/.ssh/config << EOF
-      Host *
-        StrictHostKeyChecking no
-        UserKnownHostsFile /dev/null
-        ServerAliveInterval 60
-        ServerAliveCountMax 3
-      EOF
-    - chmod 600 ~/.ssh/config
 
-# Stage 0: Nettoyage préalable
-cleanup_environment:
-  stage: cleanup
-  <<: *ansible_job
-  except:
-    - /^test-.*$/
-  script:
-    - echo "=== NETTOYAGE COMPLET DU CLUSTER KUBERNETES ==="
-    - |
-      # Création d'un script de nettoyage temporaire pour éviter les problèmes d'échappement
-      cat > cleanup_k8s.sh << 'EOF'
-      #!/bin/bash
-      echo "Début du nettoyage sur $(hostname)..."
-      
-      # Arrêt forcé de tous les processus Kubernetes
-      sudo pkill -f kube-apiserver || true
-      sudo pkill -f kube-controller-manager || true
-      sudo pkill -f kube-scheduler || true
-      sudo pkill -f kubelet || true
-      sudo pkill -f kube-proxy || true
-      sudo pkill -f etcd || true
-      
-      # Arrêt des services
-      sudo systemctl stop kubelet || true
-      sudo systemctl disable kubelet || true
-      sudo systemctl stop containerd || true
-      
-      # Attente
-      sleep 5
-      
-      # Kill forcé des ports
-      sudo fuser -k 6443/tcp || true
-      sudo fuser -k 2379/tcp || true
-      sudo fuser -k 2380/tcp || true
-      sudo fuser -k 10250/tcp || true
-      
-      # Reset kubeadm
-      sudo kubeadm reset -f || true
-      
-      # Suppression configs
-      sudo rm -rf /etc/kubernetes/ || true
-      sudo rm -rf ~/.kube/ || true
-      sudo rm -rf /var/lib/kubelet/ || true
-      sudo rm -rf /var/lib/etcd/ || true
-      sudo rm -rf /etc/cni/net.d/ || true
-      sudo rm -rf /opt/cni/bin/ || true
-      
-      # Nettoyage conteneurs
-      sudo ctr namespaces rm k8s.io || true
-      
-      # Nettoyage réseau
-      sudo ip link delete cni0 || true
-      sudo ip link delete flannel.1 || true
-      
-      # Nettoyage APT repos
-      sudo rm -rf /etc/apt/sources.list.d/kubernetes* || true
-      sudo rm -rf /etc/apt/keyrings/kubernetes* || true
-      sudo rm -rf /etc/apt/trusted.gpg.d/kubernetes* || true
-      sudo rm -rf /usr/share/keyrings/kubernetes* || true
-      
-      # Reset iptables
-      sudo iptables -F || true
-      sudo iptables -t nat -F || true
-      sudo iptables -t mangle -F || true
-      sudo iptables -X || true
-      
-      # Restart containerd
-      sudo systemctl restart containerd || true
-      
-      echo "Nettoyage terminé sur $(hostname)"
-      EOF
-      
-      chmod +x cleanup_k8s.sh
-    - echo "Copie et exécution du script sur toutes les VMs..."
-    - ansible all -i inventory.yml -m copy -a "src=cleanup_k8s.sh dest=/tmp/cleanup_k8s.sh mode=0755"
-    - ansible all -i inventory.yml -m shell -a "/tmp/cleanup_k8s.sh"
-    - echo "=== NETTOYAGE TERMINÉ ==="
-    - sleep 10
-    - echo "=== VÉRIFICATION ==="
-    - |
-      # Script de vérification simple
-      cat > verify_cleanup.sh << 'EOF'
-      #!/bin/bash
-      echo "=== Vérification $(hostname) ==="
-      echo "Kubelet: $(sudo systemctl is-active kubelet || echo 'arrêté')"
-      echo "Port 6443: $(sudo netstat -tulpn | grep :6443 || echo 'libre')"
-      echo "Configs K8s: $(ls /etc/kubernetes/ 2>/dev/null | wc -l) fichiers"
-      echo "Processus kube: $(ps aux | grep -E '[k]ube|[e]tcd' | wc -l) actifs"
-      EOF
-      
-      chmod +x verify_cleanup.sh
-    - ansible all -i inventory.yml -m copy -a "src=verify_cleanup.sh dest=/tmp/verify_cleanup.sh mode=0755"
-    - ansible all -i inventory.yml -m shell -a "/tmp/verify_cleanup.sh" || true
-  allow_failure: true
-
-# Stage 1: Validation
-validate_syntax:
-  stage: validate
-  <<: *ansible_job
-  script:
-    - ansible-playbook --syntax-check -i inventory.yml site.yml
-    - ansible-lint site.yml || true  # Warning only
-  dependencies:
-    - cleanup_environment
-  only:
-    - merge_requests
-    - main
-    - develop
-
-validate_inventory:
-  stage: validate
-  <<: *ansible_job
-  script:
-    - ansible all -i inventory.yml -m ping --timeout=10
-  dependencies:
-    - cleanup_environment
-  only:
-    - merge_requests
-    - main
-    - develop
-
-# Stage 2: Préparation
-prepare_environment:
-  stage: prepare
-  <<: *ansible_job
-  script:
-    - echo "Préparation de l'environnement..."
-    - ansible all -i inventory.yml -m setup
-    - ansible all -i inventory.yml -m shell -a "uptime"
-  artifacts:
-    reports:
-      junit: test-results.xml
-    expire_in: 1 hour
-  only:
-    - main
-    - develop
-
-# Stage 3: Déploiement du cluster
-deploy_common:
-  stage: deploy-cluster
-  <<: *ansible_job
-  script:
-    - echo "Déploiement de la configuration commune..."
-    - ansible-playbook -i inventory.yml site.yml --tags common -v
-  dependencies:
-    - prepare_environment
-  artifacts:
-    paths:
-      - logs/
-    expire_in: 1 day
-  only:
-    - main
-    - develop
-
-deploy_container_runtime:
-  stage: deploy-cluster
-  <<: *ansible_job
-  script:
-    - echo "Installation du runtime de conteneurs..."
-    - ansible-playbook -i inventory.yml site.yml --tags containerd -v
-  dependencies:
-    - deploy_common
-  artifacts:
-    paths:
-      - logs/
-    expire_in: 1 day
-  only:
-    - main
-    - develop
-
-deploy_kubernetes:
-  stage: deploy-cluster
-  <<: *ansible_job
-  script:
-    - echo "Installation de Kubernetes..."
-    - ansible-playbook -i inventory.yml site.yml --tags kubernetes -v
-  dependencies:
-    - deploy_container_runtime
-  artifacts:
-    paths:
-      - logs/
-    expire_in: 1 day
-  only:
-    - main
-    - develop
-
-deploy_master:
-  stage: deploy-cluster
-  <<: *ansible_job
-  script:
-    - echo "Configuration du nœud master..."
-    - ansible-playbook -i inventory.yml site.yml --limit masters -v
-  dependencies:
-    - deploy_kubernetes
-  artifacts:
-    paths:
-      - logs/
-      - kubeconfig/
-      - dashboard-info/
-    expire_in: 1 week
-  after_script:
-    - mkdir -p kubeconfig dashboard-info logs
-    # Diagnostic de base
-    - |
-      echo "=== DIAGNOSTIC DU CLUSTER ===" | tee logs/diagnostic.log
-      ssh -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP "
-        echo 'Statut des nœuds:' >> diagnostic.log
-        kubectl get nodes -o wide >> diagnostic.log 2>&1 || echo 'Erreur kubectl nodes' >> diagnostic.log
-        echo '' >> diagnostic.log
-        echo 'Statut des pods système:' >> diagnostic.log  
-        kubectl get pods -n kube-system >> diagnostic.log 2>&1 || echo 'Erreur kubectl pods system' >> diagnostic.log
-        echo '' >> diagnostic.log
-        echo 'Statut des pods dashboard:' >> diagnostic.log
-        kubectl get pods -n kubernetes-dashboard >> diagnostic.log 2>&1 || echo 'Dashboard non installé' >> diagnostic.log
-        echo '' >> diagnostic.log
-        echo 'Services:' >> diagnostic.log
-        kubectl get svc -A >> diagnostic.log 2>&1 || echo 'Erreur kubectl services' >> diagnostic.log
-      "
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:diagnostic.log logs/ || echo "Impossible de récupérer les logs de diagnostic"
-    # Récupération de la kubeconfig si elle existe
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config kubeconfig/config || echo "Kubeconfig non trouvée"
-    # Récupération des informations du dashboard si disponibles
-    - |
-      ssh -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP "
-        if kubectl get namespace kubernetes-dashboard 2>/dev/null; then
-          SECRET=\$(kubectl get secrets -n kubernetes-dashboard | grep admin-user | awk '{print \$1}' | head -1)
-          if [ ! -z \"\$SECRET\" ]; then
-            kubectl describe secret \$SECRET -n kubernetes-dashboard | grep token: | awk '{print \$2}' > dashboard-token.txt
-            echo 'Dashboard URL: https://$K8S_MASTER_IP:30443' > dashboard-info.txt
-            echo 'Token pour connexion:' >> dashboard-info.txt
-            cat dashboard-token.txt >> dashboard-info.txt
-          else
-            echo 'Token admin non trouvé' > dashboard-info.txt
-          fi
-        else
-          echo 'Namespace kubernetes-dashboard non trouvé' > dashboard-info.txt
-        fi
-      "
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:dashboard-* dashboard-info/ || echo "Pas d'informations dashboard disponibles"
-  only:
-    - main
-    - develop
-
-deploy_workers:
-  stage: deploy-cluster
-  <<: *ansible_job
-  script:
-    - echo "Configuration des nœuds workers..."
-    - ansible-playbook -i inventory.yml site.yml --limit workers -v
-  dependencies:
-    - deploy_master
-  artifacts:
-    paths:
-      - logs/
-    expire_in: 1 day
-  only:
-    - main
-    - develop
-
-# Stage 4: Vérification
-verify_cluster:
-  stage: verify
-  <<: *ansible_job
-  script:
-    - echo "Vérification du cluster..."
-    - mkdir -p ~/.kube
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
-    - kubectl get nodes -o wide
-    - kubectl get pods -A
-    - kubectl cluster-info
-    - |
-      # Test de déploiement simple
-      kubectl create deployment nginx-test --image=nginx:latest || true
-      kubectl expose deployment nginx-test --port=80 --type=NodePort || true
-      sleep 30
-      kubectl get pods -l app=nginx-test
-      kubectl delete deployment nginx-test || true
-      kubectl delete service nginx-test || true
-  dependencies:
-    - deploy_workers
-  artifacts:
-    reports:
-      junit: cluster-test-results.xml
-    expire_in: 1 week
-  only:
-    - main
-    - develop
-
-# Stage 5: Déploiement d'applications (optionnel)
-# Stage 5: Déploiement d'applications et interfaces
-deploy_dashboard:
-  stage: deploy-app
-  <<: *ansible_job
-  script:
-    - echo "Déploiement du Kubernetes Dashboard..."
-    - mkdir -p ~/.kube
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
-    - kubectl apply -f k8s-dashboard.yaml
-    - sleep 60
-    - kubectl get pods -n kubernetes-dashboard
-    - kubectl get services -n kubernetes-dashboard
-    - |
-      echo "Récupération du token d'accès..."
-      TOKEN=$(kubectl get secret admin-user -n kubernetes-dashboard -o jsonpath='{.data.token}' | base64 -d)
-      echo "Dashboard URL: https://$K8S_MASTER_IP:30443"
-      echo "Token: $TOKEN"
-      echo "Dashboard accessible à: https://$K8S_MASTER_IP:30443"
-      echo "Token d'accès: $TOKEN" > dashboard-access.txt
-  dependencies:
-    - verify_cluster
-  artifacts:
-    paths:
-      - dashboard-access.txt
-    expire_in: 1 week
-  only:
-    - main
-
-deploy_monitoring:
-  stage: deploy-app
-  <<: *ansible_job
-  script:
-    - echo "Déploiement du monitoring pour intégration NAS..."
-    - mkdir -p ~/.kube monitoring-config
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
-    - kubectl apply -f k8s-monitoring-stack.yaml
-    - sleep 60
-    - kubectl get pods -n kube-system -l app=node-exporter
-    - kubectl get pods -n kube-system -l app=kube-state-metrics
-    - |
-      # Récupération du token Prometheus
-      echo "Récupération du token d'authentification..."
-      TOKEN=$(kubectl get secret prometheus-k8s-token -n kube-system -o jsonpath='{.data.token}' | base64 -d)
-      echo "$TOKEN" > monitoring-config/prometheus-k8s-token.txt
-      
-      # Génération de la config Prometheus
-      cat > monitoring-config/prometheus-k8s-jobs.yml << EOF
-      # Configuration à ajouter à votre prometheus.yml sur le NAS
-      
-      scrape_configs:
-        # Métriques des nœuds (Node Exporter)
-        - job_name: 'kubernetes-nodes'
-          static_configs:
-            - targets:
-              - '$K8S_MASTER_IP:9100'
-              - '$K8S_WORKER1_IP:9100'
-              - '$K8S_WORKER2_IP:9100'
-          scrape_interval: 30s
-        
-        # Métriques Kubernetes (kube-state-metrics)
-        - job_name: 'kube-state-metrics'
-          static_configs:
-            - targets:
-              - '$K8S_MASTER_IP:30080'
-          scrape_interval: 30s
-        
-        # API Server Kubernetes
-        - job_name: 'kubernetes-apiserver'
-          scheme: https
-          tls_config:
-            insecure_skip_verify: true
-          bearer_token_file: /etc/prometheus/k8s-token.txt
-          static_configs:
-            - targets:
-              - '$K8S_MASTER_IP:6443'
-          scrape_interval: 30s
-        
-        # Kubelet cAdvisor
-        - job_name: 'kubernetes-kubelet'
-          scheme: https
-          tls_config:
-            insecure_skip_verify: true
-          bearer_token_file: /etc/prometheus/k8s-token.txt
-          static_configs:
-            - targets:
-              - '$K8S_MASTER_IP:10250'
-              - '$K8S_WORKER1_IP:10250'
-              - '$K8S_WORKER2_IP:10250'
-          metrics_path: /metrics/cadvisor
-          scrape_interval: 30s
-      EOF
-      
-      # Informations Grafana
-      cat > monitoring-config/grafana-dashboards.txt << EOF
-      DASHBOARDS GRAFANA À IMPORTER:
-      
-      1. Kubernetes Cluster Monitoring (ID: 7249)
-      2. Kubernetes Pod Monitoring (ID: 6417)
-      3. Node Exporter Full (ID: 1860)
-      4. Kubernetes Deployment (ID: 8588)
-      
-      ENDPOINTS MONITORING:
-      - Node Exporter: $K8S_MASTER_IP:9100, $K8S_WORKER1_IP:9100, $K8S_WORKER2_IP:9100
-      - kube-state-metrics: $K8S_MASTER_IP:30080
-      - API Server: $K8S_MASTER_IP:6443
-      - Dashboard K8s: https://$K8S_MASTER_IP:30443
-      EOF
-      
-      echo "Configuration monitoring générée dans monitoring-config/"
-  dependencies:
-    - deploy_dashboard
-  artifacts:
-    paths:
-      - monitoring-config/
-    expire_in: 1 week
-  only:
-    - main
-
+# ================================================================================================
+# JOB DE TEST APPLICATIF - Nginx sur cluster existant
+# ================================================================================================
 deploy_test_app:
   stage: deploy-app
-  <<: *test_job
+  <<: *app_deploy
   only:
-    - /^test-.*$/
+    - /^test-.*$/  # Branches test-* uniquement
   script:
-    - echo "=== DIAGNOSTIC PIPELINE TEST ==="
-    - echo "Tentative de connexion au cluster Kubernetes..."
-    - echo "Master IP:" $K8S_MASTER_IP
-    - mkdir -p ~/.kube
-    - echo "=== Test de connectivité réseau ==="
-    - ping -c 3 $K8S_MASTER_IP || echo "Ping échoué"
-    - nc -zv $K8S_MASTER_IP 6443 || echo "Port 6443 non accessible"
-    - echo "=== Tentative récupération kubeconfig via SSH ==="
-    - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config || echo "SCP échoué - clé SSH non configurée"
-    - echo "=== Affichage du manifest à déployer ==="
+    - echo "=== DEPLOIEMENT APPLICATION NGINX ==="
+    - echo "Cluster cible - $K8S_MASTER_IP"
+    - echo "Application - nginx-test avec 3 replicas sur port 30090"
+    
+    # Test connectivité cluster
+    - echo "=== Test connectivite ==="
+    - ping -c 2 $K8S_MASTER_IP || echo "Ping failed"
+    - nc -zv $K8S_MASTER_IP 6443 || echo "API server inaccessible"
+    
+    # Récupération kubeconfig
+    - echo "=== Recuperation kubeconfig ==="
+    - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config || echo "SSH failed - deploiement manuel requis"
+    
+    # Affichage manifest
+    - echo "=== Manifest application ==="
     - cat test-deployment.yaml
-    - echo "=== Instructions pour déploiement manuel ==="
-    - echo "Si le cluster est accessible, exécutez:"
-    - echo "kubectl apply -f test-deployment.yaml"
-    - echo "kubectl get pods -l app=nginx-test"
-    - echo "kubectl get svc nginx-test-service"
-    - echo "Accès nginx sur http://$K8S_MASTER_IP:30090"
-    - echo "=== FIN DU DIAGNOSTIC ==="
+    
+    # Instructions déploiement
+    - echo "=== Instructions deploiement ==="
+    - echo "1. kubectl apply -f test-deployment.yaml"
+    - echo "2. kubectl get pods -l app=nginx-test"
+    - echo "3. kubectl get svc nginx-test-service"
+    - echo "4. Acces sur http://$K8S_MASTER_IP:30090"
+    - echo "=== FIN ==="
 
-deploy_test_app_manual:
+# ================================================================================================
+# JOB MANUEL - Déploiement sur main avec dépendances
+# ================================================================================================
+deploy_app_manual:
   stage: deploy-app
-  <<: *ansible_job
+  <<: *app_deploy
   only:
     - main
   when: manual
   allow_failure: true
   script:
-    - echo "Déploiement manuel de l'application de test..."
-    - mkdir -p ~/.kube
+    - echo "=== DEPLOIEMENT MANUEL APPLICATION ==="
     - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
-    # Nettoyage des anciens services pour éviter les conflits de ports
     - kubectl delete deployment nginx-test --ignore-not-found=true
     - kubectl delete service nginx-test-service --ignore-not-found=true
-    - sleep 10
+    - sleep 5
     - kubectl apply -f test-deployment.yaml
-    - sleep 60
+    - sleep 30
     - kubectl get pods -l app=nginx-test
-    - kubectl get services nginx-test-service
-    - echo "Application nginx accessible sur http://$K8S_MASTER_IP:30090"
-    - echo "Dashboard Kubernetes accessible sur https://$K8S_MASTER_IP:30443"
-  dependencies:
-    - deploy_dashboard
-
-# Job de nettoyage manuel
-cleanup_cluster:
-  stage: maintenance
-  <<: *ansible_job
-  script:
-    - echo "Nettoyage du cluster..."
-    - ansible-playbook -i inventory.yml cleanup-playbook.yml -v
-  when: manual
-  allow_failure: true
-  only:
-    - main
-    - develop
+    - kubectl get svc nginx-test-service
+    - echo "Application accessible sur http://$K8S_MASTER_IP:30090"
