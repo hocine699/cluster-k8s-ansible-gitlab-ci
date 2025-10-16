@@ -72,6 +72,20 @@ variables:
           ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
       EOF
 
+# Template simplifié pour les tests (sans inventory Ansible)
+.test_job: &test_job
+  image: mon-runner-devops:latest
+  tags:
+    - synology
+  variables:
+    K8S_MASTER_IP: "192.168.1.72"
+    K8S_WORKER1_IP: "192.168.1.73" 
+    K8S_WORKER2_IP: "192.168.1.74"
+  before_script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+
 # Stage 0: Nettoyage préalable
 cleanup_environment:
   stage: cleanup
@@ -481,7 +495,7 @@ deploy_monitoring:
 
 deploy_test_app:
   stage: deploy-app
-  <<: *ansible_job
+  <<: *test_job
   only:
     - /^test-.*$/
   script:
