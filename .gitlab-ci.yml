@@ -80,26 +80,20 @@ deploy_cluster_metrics:
   script:
     - echo "=== DEPLOIEMENT EXPORTERS POUR PROMETHEUS NAS ==="
     - echo "Node Exporter + kube-state-metrics"
-    
-    # Récupération kubeconfig
     - echo "=== Recuperation kubeconfig ==="
     - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
-    
-    # Déploiement exporters
     - echo "=== DEPLOIEMENT EXPORTERS AVEC HELM ==="
     - cd helm-charts/cluster-metrics
     - helm upgrade --install cluster-metrics . --namespace kube-system
     - sleep 30
-    
-    # Vérification
     - echo "=== VERIFICATION EXPORTERS ==="
     - kubectl get pods -n kube-system -l app=node-exporter
     - kubectl get svc -n kube-system -l app=node-exporter
     - echo ""
     - echo "=== ENDPOINTS POUR PROMETHEUS NAS ==="
-    - echo "Node Exporter: http://192.168.1.72:30910/metrics"
-    - echo "Node Exporter: http://192.168.1.73:30910/metrics"  
-    - echo "Node Exporter: http://192.168.1.74:30910/metrics"
+    - echo "Node Exporter http://192.168.1.72:30910/metrics"
+    - echo "Node Exporter http://192.168.1.73:30910/metrics"
+    - echo "Node Exporter http://192.168.1.74:30910/metrics"
     - echo "Utilisez prometheus-nas-config.yml pour configuration"
 
 # ================================================================================================
@@ -131,9 +125,9 @@ deploy_monitoring:
     - kubectl get svc -n monitoring
     - echo ""
     - echo "=== ACCES MONITORING ==="
-    - echo "Prometheus: http://$K8S_MASTER_IP:30909"
-    - echo "Grafana: http://$K8S_MASTER_IP:30300"
-    - echo "Login Grafana: admin / monitoring123"
+    - echo "Prometheus http://$K8S_MASTER_IP:30909"
+    - echo "Grafana http://$K8S_MASTER_IP:30300"
+    - echo "Login Grafana admin / monitoring123"
 
 # ================================================================================================
 # JOB HELM - Déploiement avec Helm charts
