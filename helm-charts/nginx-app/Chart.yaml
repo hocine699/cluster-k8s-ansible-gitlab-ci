@@ -1,0 +1,12 @@
+apiVersion: v2
+name: nginx-app
+description: Chart Helm simple pour Nginx
+version: 0.1.0
+appVersion: "1.0"
+keywords:
+  - nginx
+  - web
+  - frontend
+maintainers:
+  - name: hocine
+    email: hocine@example.com

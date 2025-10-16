@@ -1,0 +1,28 @@
+# Configuration par défaut pour nginx-app
+replicaCount: 3
+
+image:
+  repository: nginx
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 30090
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi
+
+# Labels et sélecteurs
+labels:
+  app: nginx-helm
+  version: v1
+
+# Configuration du container
+containerPort: 80

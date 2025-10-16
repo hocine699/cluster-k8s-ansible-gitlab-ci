@@ -48,29 +48,66 @@ variables:
       fi
 
 # ================================================================================================
-# JOB DE TEST SANS SSH - Test direct kubectl
+# JOB DE TEST HELM - Vérification Helm disponible
 # ================================================================================================
-test_kubectl_direct:
+test_helm:
   stage: deploy-app
-  image: mon-runner-devops:latest
-  tags:
-    - synology
+  <<: *app_deploy
   only:
     - /^test-.*$/
   script:
-    - echo "=== TEST DIRECT KUBECTL ==="
-    - echo "Tentative connexion directe au cluster..."
-    - kubectl --server=https://$K8S_MASTER_IP:6443 --insecure-skip-tls-verify get nodes || echo "Connexion directe échouée"
-    - echo "Si ça marche, on peut éviter SSH !"
+    - echo "=== TEST HELM DISPONIBLE ==="
+    - helm version --client
+    - echo "=== RECUPERATION KUBECONFIG ==="
+    - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    - echo "=== TEST HELM AVEC CLUSTER ==="
+    - helm list -A || echo "Pas de releases Helm installées"
+    - kubectl get pods -A | head -5
+    - echo "Helm prêt pour déploiement ! 🚀"
 
 # ================================================================================================
 # JOB DE TEST APPLICATIF - Nginx sur cluster existant
 # ================================================================================================
-deploy_test_app:
+# ================================================================================================
+# JOB HELM - Déploiement avec Helm charts
+# ================================================================================================
+deploy_helm_app:
   stage: deploy-app
   <<: *app_deploy
   only:
     - /^test-.*$/  # Branches test-* uniquement
+  script:
+    - echo "=== DEPLOIEMENT HELM NGINX ==="
+    - echo "Cluster cible - $K8S_MASTER_IP"
+    
+    # Récupération kubeconfig
+    - echo "=== Recuperation kubeconfig ==="
+    - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    
+    # Test Helm
+    - echo "=== VERIFICATION HELM ==="
+    - helm version --client
+    - helm list -A
+    
+    # Déploiement avec Helm
+    - echo "=== DEPLOIEMENT NGINX AVEC HELM ==="
+    - cd helm-charts/nginx-app
+    - helm upgrade --install nginx-release . --namespace default
+    - sleep 30
+    
+    # Vérification
+    - echo "=== VERIFICATION ==="
+    - helm list
+    - kubectl get pods -l app.kubernetes.io/name=nginx-app
+    - kubectl get svc -l app.kubernetes.io/name=nginx-app
+    - echo "Nginx Helm accessible sur http://$K8S_MASTER_IP:30090"
+
+deploy_test_app:
+  stage: deploy-app
+  <<: *app_deploy
+  only:
+    - /^test-.*$/  # Branches test-* uniquement  
+  when: manual
   script:
     - echo "=== DEPLOIEMENT TOUTES APPLICATIONS ==="
     - echo "Cluster cible - $K8S_MASTER_IP"
