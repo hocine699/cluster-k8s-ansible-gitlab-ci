@@ -1,0 +1,11 @@
+apiVersion: v2
+name: cluster-metrics
+description: Expose métriques cluster pour Prometheus externe
+version: 0.1.0
+appVersion: "1.0"
+keywords:
+  - metrics
+  - node-exporter
+  - kube-state-metrics
+maintainers:
+  - name: hocine

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: monitoring-stack
+description: Stack de monitoring complet avec Prometheus et Grafana
+version: 0.1.0
+appVersion: "2.0"
+keywords:
+  - monitoring
+  - prometheus
+  - grafana
+  - metrics
+maintainers:
+  - name: hocine
+    email: hocine@example.com
+dependencies: []

@@ -1,0 +1,53 @@
+# Configuration Prometheus NAS pour scraper cluster Kubernetes
+# Fichier: prometheus-nas-config.yml
+# 
+# À ajouter dans votre Prometheus sur NAS Synology
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus lui-même (NAS)
+  - job_name: 'prometheus-nas'
+    static_configs:
+    - targets: ['localhost:9090']
+
+  # Node Exporter du cluster K8s (via NodePort)
+  - job_name: 'k8s-nodes'
+    static_configs:
+    - targets: 
+      - '192.168.1.72:30910'  # Master
+      - '192.168.1.73:30910'  # Worker-1  
+      - '192.168.1.74:30910'  # Worker-2
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+
+  # API Server Kubernetes (HTTPS avec token)
+  - job_name: 'k8s-apiserver'
+    kubernetes_sd_configs:
+    - api_server: 'https://192.168.1.72:6443'
+      role: endpoints
+      # Utiliser le token du kubeconfig
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+    bearer_token_file: '/path/to/k8s-token'
+
+  # Applications dans le cluster (nginx via NodePort)
+  - job_name: 'k8s-nginx-app'
+    static_configs:
+    - targets: ['192.168.1.72:30090']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # GitLab (si métriques activées)
+  - job_name: 'gitlab-nas'
+    static_configs:
+    - targets: ['localhost:7878/-/metrics']
+    scrape_interval: 60s
+
+  # Métriques du NAS Synology lui-même
+  - job_name: 'synology-nas'
+    static_configs:
+    - targets: ['localhost:9100']  # Si node_exporter installé sur NAS

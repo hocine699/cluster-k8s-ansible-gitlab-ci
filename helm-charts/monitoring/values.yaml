@@ -1,0 +1,72 @@
+# Configuration du stack de monitoring
+
+# Prometheus
+prometheus:
+  enabled: true
+  replicas: 1
+  image:
+    repository: prom/prometheus
+    tag: "v2.45.0"
+  service:
+    type: NodePort
+    port: 9090
+    nodePort: 30909
+  storage:
+    size: 10Gi
+  scrapeInterval: 15s
+  retentionTime: 15d
+
+# Grafana
+grafana:
+  enabled: true
+  replicas: 1
+  image:
+    repository: grafana/grafana
+    tag: "10.0.0"
+  service:
+    type: NodePort
+    port: 3000
+    nodePort: 30300
+  admin:
+    username: admin
+    password: "monitoring123"
+  storage:
+    size: 5Gi
+
+# Node Exporter (métriques VMs)
+nodeExporter:
+  enabled: true
+  image:
+    repository: prom/node-exporter
+    tag: "v1.6.0"
+
+# Kube State Metrics
+kubeStateMetrics:
+  enabled: true
+  image:
+    repository: registry.k8s.io/kube-state-metrics/kube-state-metrics
+    tag: "v2.9.2"
+
+# Configuration réseau
+network:
+  prometheusPort: 9090
+  grafanaPort: 3000
+  nodeExporterPort: 9100
+  kubeStatePort: 8080
+
+# Ressources
+resources:
+  prometheus:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  grafana:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi

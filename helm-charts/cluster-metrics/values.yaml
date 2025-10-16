@@ -1,0 +1,11 @@
+# Expose métriques pour Prometheus externe (NAS)
+nodeExporter:
+  enabled: true
+  port: 30910  # NodePort pour accès externe
+
+kubeStateMetrics:
+  enabled: true
+  port: 30080  # NodePort pour accès externe
+
+# Namespace pour les métriques
+namespace: kube-system
