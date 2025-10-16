@@ -1,23 +1,126 @@
-# Playbook Ansible pour Cluster Kubernetes avec GitLab CI
+# Pipeline Déploiement d'Applications Kubernetes
 
-Ce projet automatise le déploiement d'un cluster Kubernetes sur 3 VMs Ubuntu 24.04 via GitLab CI hébergé sur Synology NAS, avec intégration monitoring Prometheus/Grafana.
+Ce projet automatise le déploiement d'applications sur un cluster Kubernetes existant via GitLab CI.
+
+## 🎯 Objectif
+
+**Déploiement applicatif uniquement** - Ce repo ne déploie PAS d'infrastructure Kubernetes. Il déploie des applications sur un cluster K8s déjà existant.
 
 ## 📁 Structure du projet
 
 ```
-ansible-k8s-cluster/
-├── .gitlab-ci.yml                    # Pipeline GitLab CI complète
-├── inventory.yml                     # Inventaire des serveurs
-├── site.yml                         # Playbook principal Ansible
-├── ansible.cfg                      # Configuration Ansible
-├── group_vars/all.yml               # Variables globales
-├── roles/                           # Rôles Ansible
-│   ├── common/tasks/main.yml           # Configuration commune
-│   ├── containerd/tasks/main.yml       # Installation containerd
-│   ├── kubernetes/tasks/main.yml       # Installation Kubernetes
-│   ├── master/tasks/main.yml           # Configuration master
-│   └── worker/tasks/main.yml           # Configuration workers
-├── k8s-dashboard.yaml               # Dashboard Kubernetes
+k8s-app-deployment/
+├── .gitlab-ci.yml           # Pipeline GitLab CI applicatif minimal
+├── test-deployment.yaml     # Application nginx de test
+├── README.md               # Cette documentation
+└── .gitignore              # Fichiers ignorés Git
+```
+
+## 🚀 Fonctionnalités
+
+- **Pipeline léger** : 87 lignes (vs 600+ pour infrastructure)
+- **Déploiement automatique** : sur branches `test-*`
+- **Déploiement manuel** : sur branche `main`
+- **Test connectivité** : ping + port 6443
+- **Support SSH** : récupération kubeconfig automatique
+- **Fallback** : instructions manuelles si SSH échoue
+
+## 📋 Prérequis
+
+### Cluster Kubernetes existant
+- Master : `192.168.1.72`
+- Workers : `192.168.1.73`, `192.168.1.74`
+- API Server accessible sur port `6443`
+
+### GitLab CI Variables
+Configurez dans GitLab → Settings → CI/CD → Variables :
+
+| Variable | Type | Valeur | Description |
+|----------|------|--------|-------------|
+| `SSH_PRIVATE_KEY` | Variable | Clé SSH privée | Accès au cluster via SSH |
+
+## 🔧 Utilisation
+
+### Déploiement automatique (branches test-*)
+```bash
+git checkout -b test-nginx-deployment
+git push origin test-nginx-deployment
+# → Pipeline s'exécute automatiquement
+```
+
+### Déploiement manuel (main)
+1. Merger dans `main`
+2. Aller dans GitLab → Pipelines
+3. Cliquer "Play" sur `deploy_app_manual`
+
+### Déploiement manuel direct
+```bash
+# Sur le master K8s
+kubectl apply -f test-deployment.yaml
+kubectl get pods -l app=nginx-test
+kubectl get svc nginx-test-service
+
+# Accès application
+curl http://192.168.1.72:30090
+```
+
+## 📦 Application de test
+
+**Nginx** : 3 replicas, service NodePort 30090
+- **Ressources** : 64Mi-128Mi RAM, 250m-500m CPU
+- **Accès** : http://192.168.1.72:30090
+- **Port conflit** : 30090 (évite conflit avec kube-state-metrics sur 30080)
+
+## 🛠️ Architecture Pipeline
+
+```
+GitLab CI Runner
+    ↓
+Test connectivité cluster
+    ↓  
+SSH → Récupération kubeconfig
+    ↓
+kubectl apply manifest
+    ↓
+Application déployée
+```
+
+## 📊 Monitoring
+
+Une fois déployé, surveillez :
+- **Pods** : `kubectl get pods -l app=nginx-test`
+- **Service** : `kubectl get svc nginx-test-service`
+- **Logs** : `kubectl logs -l app=nginx-test`
+
+## 🔍 Troubleshooting
+
+### SSH échoue
+1. Vérifiez variable `SSH_PRIVATE_KEY` dans GitLab
+2. Testez SSH manuel : `ssh hocine@192.168.1.72`
+3. Utilisez déploiement manuel avec instructions
+
+### Port 30090 occupé
+```bash
+kubectl get svc --all-namespaces | grep 30090
+kubectl delete svc <service-conflit>
+```
+
+### Pods en erreur
+```bash
+kubectl describe pod <pod-name>
+kubectl logs <pod-name>
+```
+
+## 🎯 Évolution
+
+Pour ajouter d'autres applications :
+1. Créez nouveaux manifests YAML
+2. Ajoutez jobs dans `.gitlab-ci.yml`
+3. Adaptez les variables selon vos besoins
+
+---
+
+**Note** : Ce repo était auparavant utilisé pour déployer l'infrastructure K8s complète avec Ansible. Il a été simplifié pour se concentrer uniquement sur le déploiement d'applications.
 ├── k8s-monitoring-stack.yaml        # Stack monitoring (Node Exporter, kube-state-metrics)
 ├── test-deployment.yaml             # Application de test
 ├── cleanup-playbook.yml             # Nettoyage automatisé
