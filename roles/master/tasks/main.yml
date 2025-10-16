@@ -61,15 +61,23 @@
         KUBECONFIG: /etc/kubernetes/admin.conf
       when: not kubeconfig_stat.stat.exists
 
-    - name: "Génération du token de jointure"
-      shell: kubeadm token create --print-join-command
+    - name: "Génération de la commande de jointure pour les workers"
+      command: kubeadm token create --print-join-command
       register: join_command
+      when: not kubeconfig_stat.stat.exists
+
+    - name: "Débogage - État de join_command"
+      debug:
+        var: join_command
       when: not kubeconfig_stat.stat.exists
 
     - name: "Sauvegarde de la commande de jointure"
       set_fact:
         kubernetes_join_command: "{{ join_command.stdout }}"
-      when: join_command is defined
+      when: 
+        - join_command is defined 
+        - join_command.stdout is defined
+        - join_command.rc == 0
 
     - name: "Attente que tous les nœuds soient prêts"
       shell: kubectl get nodes --no-headers | grep -v NotReady | wc -l
