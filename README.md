@@ -215,4 +215,4 @@ GitLab CI (Synology NAS) → Pipeline → Cluster K8s (3 VMs)
                      Prometheus/Grafana (NAS)
 ```
 
-**Le cluster est maintenant prêt avec interface graphique et monitoring intégré !** 🚀
+**Le cluster est maintenant prêt avec interface graphique et monitoring intégré !** 🚀# Pipeline relancé le 10/16/2025 10:54:36
