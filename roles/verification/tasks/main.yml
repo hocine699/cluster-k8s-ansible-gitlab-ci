@@ -1,0 +1,84 @@
+---
+- name: "Vérification que tous les nœuds sont prêts"
+  shell: kubectl get nodes --no-headers | grep -v NotReady | wc -l
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: ready_nodes
+  until: ready_nodes.stdout|int >= groups['all']|length
+  retries: 30
+  delay: 10
+  delegate_to: "{{ groups['master'][0] }}"
+
+- name: "Affichage de l'état des nœuds"
+  shell: kubectl get nodes -o wide
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: nodes_status
+  delegate_to: "{{ groups['master'][0] }}"
+
+- name: "Résultat - État des nœuds"
+  debug:
+    var: nodes_status.stdout_lines
+
+- name: "Vérification que les pods système sont en cours d'exécution"
+  shell: kubectl get pods -n kube-system
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: system_pods
+  delegate_to: "{{ groups['master'][0] }}"
+
+- name: "Résultat - Pods système"
+  debug:
+    var: system_pods.stdout_lines
+
+- name: "Vérification du dashboard Kubernetes"
+  shell: kubectl get pods -n kubernetes-dashboard
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: dashboard_pods
+  delegate_to: "{{ groups['master'][0] }}"
+  ignore_errors: true
+
+- name: "Résultat - État du dashboard"
+  debug:
+    var: dashboard_pods.stdout_lines
+  when: dashboard_pods.rc == 0
+
+- name: "Récupération du token du dashboard"
+  shell: |
+    SECRET=$(kubectl get secrets -n kubernetes-dashboard | grep admin-user | awk '{print $1}')
+    if [ ! -z "$SECRET" ]; then
+      kubectl describe secret $SECRET -n kubernetes-dashboard | grep token: | awk '{print $2}'
+    else
+      echo "Token not found - ServiceAccount may not be created yet"
+    fi
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: dashboard_token
+  delegate_to: "{{ groups['master'][0] }}"
+  ignore_errors: true
+
+- name: "Sauvegarde du token dashboard"
+  copy:
+    content: "{{ dashboard_token.stdout }}"
+    dest: "dashboard-token.txt"
+  when: 
+    - dashboard_token.rc == 0 
+    - dashboard_token.stdout != "Token not found - ServiceAccount may not be created yet"
+  delegate_to: "{{ groups['master'][0] }}"
+
+- name: "Récupération des informations de connexion"
+  shell: |
+    echo "=== INFORMATIONS DU CLUSTER ===" > dashboard-info.txt
+    echo "Dashboard URL: https://{{ groups['master'][0] }}:30443" >> dashboard-info.txt
+    echo "Token admin:" >> dashboard-info.txt
+    echo "{{ dashboard_token.stdout }}" >> dashboard-info.txt
+    echo "" >> dashboard-info.txt
+    echo "=== NŒUDS DU CLUSTER ===" >> dashboard-info.txt
+    kubectl get nodes -o wide >> dashboard-info.txt
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  delegate_to: "{{ groups['master'][0] }}"
+  when: 
+    - dashboard_token.rc == 0
+    - dashboard_token.stdout != "Token not found - ServiceAccount may not be created yet"

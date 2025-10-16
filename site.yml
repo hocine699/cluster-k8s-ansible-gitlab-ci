@@ -19,17 +19,9 @@
     - role: worker
       when: inventory_hostname in groups['workers']
 
-  post_tasks:
-    - name: "Affichage du statut du cluster"
-      shell: kubectl get nodes
-      register: cluster_status
-      when: inventory_hostname in groups['masters']
-      delegate_to: "{{ groups['masters'][0] }}"
-      run_once: true
-      
-    - name: "Affichage des résultats"
-      debug:
-        var: cluster_status.stdout_lines
-      when: inventory_hostname in groups['masters']
-      delegate_to: "{{ groups['masters'][0] }}"
-      run_once: true
+- name: "Vérification finale du cluster"
+  hosts: all
+  become: true
+  roles:
+    - verification
+  run_once: true

@@ -189,17 +189,44 @@ deploy_master:
       - dashboard-info/
     expire_in: 1 week
   after_script:
-    - mkdir -p kubeconfig dashboard-info
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config kubeconfig/config
+    - mkdir -p kubeconfig dashboard-info logs
+    # Diagnostic de base
     - |
-      # Récupération des informations du dashboard
+      echo "=== DIAGNOSTIC DU CLUSTER ===" | tee logs/diagnostic.log
       ssh -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP "
-        kubectl get secret admin-user -n kubernetes-dashboard -o jsonpath='{.data.token}' | base64 -d > dashboard-token.txt
-        echo 'Dashboard URL: https://$K8S_MASTER_IP:30443' > dashboard-info.txt
-        echo 'Token pour connexion:' >> dashboard-info.txt
-        cat dashboard-token.txt >> dashboard-info.txt
+        echo 'Statut des nœuds:' >> diagnostic.log
+        kubectl get nodes -o wide >> diagnostic.log 2>&1 || echo 'Erreur kubectl nodes' >> diagnostic.log
+        echo '' >> diagnostic.log
+        echo 'Statut des pods système:' >> diagnostic.log  
+        kubectl get pods -n kube-system >> diagnostic.log 2>&1 || echo 'Erreur kubectl pods system' >> diagnostic.log
+        echo '' >> diagnostic.log
+        echo 'Statut des pods dashboard:' >> diagnostic.log
+        kubectl get pods -n kubernetes-dashboard >> diagnostic.log 2>&1 || echo 'Dashboard non installé' >> diagnostic.log
+        echo '' >> diagnostic.log
+        echo 'Services:' >> diagnostic.log
+        kubectl get svc -A >> diagnostic.log 2>&1 || echo 'Erreur kubectl services' >> diagnostic.log
       "
-    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:dashboard-* dashboard-info/
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:diagnostic.log logs/ || echo "Impossible de récupérer les logs de diagnostic"
+    # Récupération de la kubeconfig si elle existe
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config kubeconfig/config || echo "Kubeconfig non trouvée"
+    # Récupération des informations du dashboard si disponibles
+    - |
+      ssh -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP "
+        if kubectl get namespace kubernetes-dashboard 2>/dev/null; then
+          SECRET=\$(kubectl get secrets -n kubernetes-dashboard | grep admin-user | awk '{print \$1}' | head -1)
+          if [ ! -z \"\$SECRET\" ]; then
+            kubectl describe secret \$SECRET -n kubernetes-dashboard | grep token: | awk '{print \$2}' > dashboard-token.txt
+            echo 'Dashboard URL: https://$K8S_MASTER_IP:30443' > dashboard-info.txt
+            echo 'Token pour connexion:' >> dashboard-info.txt
+            cat dashboard-token.txt >> dashboard-info.txt
+          else
+            echo 'Token admin non trouvé' > dashboard-info.txt
+          fi
+        else
+          echo 'Namespace kubernetes-dashboard non trouvé' > dashboard-info.txt
+        fi
+      "
+    - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:dashboard-* dashboard-info/ || echo "Pas d'informations dashboard disponibles"
   only:
     - main
     - develop
