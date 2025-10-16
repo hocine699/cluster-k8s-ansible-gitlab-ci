@@ -1,6 +1,15 @@
 # Pipeline GitLab CI pour déploiement cluster Kubernetes
 # Compatible avec GitLab hébergé sur Synology NAS
 
+workflow:
+  rules:
+    # Pipeline complet pour main
+    - if: $CI_COMMIT_REF_NAME == "main"
+    # Pipeline test seulement pour branches test-*
+    - if: $CI_COMMIT_REF_NAME =~ /^test-.*$/
+      variables:
+        PIPELINE_TYPE: "test-only"
+
 stages:
   - cleanup
   - validate
@@ -65,6 +74,8 @@ variables:
 cleanup_environment:
   stage: cleanup
   <<: *ansible_job
+  rules:
+    - if: $PIPELINE_TYPE != "test-only"
   script:
     - echo "=== NETTOYAGE COMPLET DU CLUSTER KUBERNETES ==="
     - |
@@ -472,15 +483,26 @@ deploy_monitoring:
 deploy_test_app:
   stage: deploy-app
   <<: *ansible_job
+  rules:
+    # Exécution automatique pour branches test-*
+    - if: $PIPELINE_TYPE == "test-only"
+    # Exécution manuelle pour main
+    - if: $CI_COMMIT_REF_NAME == "main"
+      when: manual
+      allow_failure: true
   script:
     - echo "Déploiement de l'application de test..."
     - mkdir -p ~/.kube
     - scp -o StrictHostKeyChecking=no hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config
+    # Nettoyage des anciens services pour éviter les conflits de ports
+    - kubectl delete deployment nginx-test --ignore-not-found=true
+    - kubectl delete service nginx-test-service --ignore-not-found=true
+    - sleep 10
     - kubectl apply -f test-deployment.yaml
     - sleep 60
     - kubectl get pods -l app=nginx-test
     - kubectl get services nginx-test-service
-    - echo "Application nginx accessible sur http://$K8S_MASTER_IP:30080"
+    - echo "Application nginx accessible sur http://$K8S_MASTER_IP:30090"
     - echo "Dashboard Kubernetes accessible sur https://$K8S_MASTER_IP:30443"
   dependencies:
     - deploy_dashboard
