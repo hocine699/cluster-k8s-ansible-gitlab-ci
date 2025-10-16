@@ -20,6 +20,15 @@ variables:
     - synology
   before_script:
     - mkdir -p ~/.ssh ~/.kube
+    # Debug variables disponibles
+    - echo "=== DEBUG VARIABLES ==="
+    - echo "Variables disponibles contenant SSH:"
+    - env | grep -i ssh || echo "Aucune variable SSH trouvée"
+    - echo "Longueur SSH_PRIVATE_KEY:" 
+    - echo ${#SSH_PRIVATE_KEY}
+    - echo "Test variable SSH_PRIVATE_KEY définie:"
+    - test -n "$SSH_PRIVATE_KEY" && echo "DEFINIE" || echo "NON DEFINIE"
+    
     # Configuration SSH si disponible
     - |
       if [ -n "$SSH_PRIVATE_KEY" ]; then
@@ -31,7 +40,10 @@ variables:
         echo "SSH configuré avec succès"
       else
         echo "ERROR: Variable SSH_PRIVATE_KEY non trouvée!"
-        echo "Allez dans Settings > CI/CD > Variables pour l'ajouter"
+        echo "Vérifiez dans Settings > CI/CD > Variables:"
+        echo "1. Variable SSH_PRIVATE_KEY existe"
+        echo "2. Environment scope = All (default)"
+        echo "3. Protected = true si branche protégée"
         exit 1
       fi
 
