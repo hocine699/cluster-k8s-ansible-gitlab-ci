@@ -524,46 +524,24 @@ deploy_test_app:
   only:
     - /^test-.*$/
   script:
-    - echo "Déploiement automatique de l'application de test..."
+    - echo "=== DIAGNOSTIC PIPELINE TEST ==="
+    - echo "Tentative de connexion au cluster Kubernetes..."
+    - echo "Master IP:" $K8S_MASTER_IP
     - mkdir -p ~/.kube
-    # Création d'un kubeconfig avec certificats intégrés (si disponibles)
-    - |
-      echo "=== Configuration kubectl pour accès au cluster ==="
-      # Essai avec kubeconfig depuis SSH
-      if scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config 2>/dev/null; then
-        echo "✅ Kubeconfig récupéré avec succès"
-      else
-        echo "❌ SSH non disponible - Configuration manuelle kubectl"
-        # Configuration kubectl avec accès direct (nécessite token)
-        echo "Tentative de connexion directe à l'API server..."
-        # Désactiver l'authentification pour ce test uniquement
-        export KUBECTL_EXTERNAL_DIFF=""
-        kubectl config set-cluster kubernetes --server=https://$K8S_MASTER_IP:6443 --insecure-skip-tls-verify=true
-        kubectl config set-context kubernetes --cluster=kubernetes --user=admin
-        kubectl config use-context kubernetes
-        
-        echo "ATTENTION: Test sans authentification - pour diagnostic uniquement"
-        echo "Le cluster nécessite une configuration d'authentification appropriée"
-      fi
-    
     - echo "=== Test de connectivité réseau ==="
-    - ping -c 3 $K8S_MASTER_IP || echo "Ping failed"
-    - nc -zv $K8S_MASTER_IP 6443 || echo "Port 6443 not accessible"
-    - curl -k https://$K8S_MASTER_IP:6443 || echo "HTTPS API not accessible"
-    - echo "=== SOLUTION TEMPORAIRE: Diagnostic ==="
-    - echo "Configuration nécessaire pour GitLab CI:"
-    - echo "1. Ajouter SSH_PRIVATE_KEY dans GitLab CI/CD Variables (type File)"
-    - echo "2. Ou configurer Service Account avec token pour kubectl"
-    - echo ""
-    - echo "Manifest à déployer:"
+    - ping -c 3 $K8S_MASTER_IP || echo "Ping échoué"
+    - nc -zv $K8S_MASTER_IP 6443 || echo "Port 6443 non accessible"
+    - echo "=== Tentative récupération kubeconfig via SSH ==="
+    - scp -o StrictHostKeyChecking=no -o ConnectTimeout=10 hocine@$K8S_MASTER_IP:~/.kube/config ~/.kube/config || echo "SCP échoué - clé SSH non configurée"
+    - echo "=== Affichage du manifest à déployer ==="
     - cat test-deployment.yaml
-    - echo ""
-    - echo "Pour déploiement manuel sur le cluster:"
+    - echo "=== Instructions pour déploiement manuel ==="
+    - echo "Si le cluster est accessible, exécutez:"
     - echo "kubectl apply -f test-deployment.yaml"
+    - echo "kubectl get pods -l app=nginx-test"
     - echo "kubectl get svc nginx-test-service"
-    - echo "Accès sur http://$K8S_MASTER_IP:30090"
-    - echo "=== Pipeline de test terminé ==="
-    - exit 0
+    - echo "Accès nginx sur http://$K8S_MASTER_IP:30090"
+    - echo "=== FIN DU DIAGNOSTIC ==="
 
 deploy_test_app_manual:
   stage: deploy-app
