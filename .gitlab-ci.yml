@@ -9,6 +9,8 @@ workflow:
     - if: $CI_COMMIT_REF_NAME =~ /^test-.*$/
       variables:
         PIPELINE_TYPE: "test-only"
+    # Par défaut, autoriser le pipeline
+    - when: always
 
 stages:
   - cleanup
@@ -484,9 +486,11 @@ deploy_test_app:
   stage: deploy-app
   <<: *ansible_job
   rules:
-    # Exécution automatique pour branches test-*
+    # Exécution automatique pour branches test-* (sans dépendances)
     - if: $PIPELINE_TYPE == "test-only"
-    # Exécution manuelle pour main
+      variables:
+        SKIP_DEPENDENCIES: "true"
+    # Exécution manuelle pour main (avec dépendances)
     - if: $CI_COMMIT_REF_NAME == "main"
       when: manual
       allow_failure: true
@@ -504,10 +508,6 @@ deploy_test_app:
     - kubectl get services nginx-test-service
     - echo "Application nginx accessible sur http://$K8S_MASTER_IP:30090"
     - echo "Dashboard Kubernetes accessible sur https://$K8S_MASTER_IP:30443"
-  dependencies:
-    - deploy_dashboard
-  only:
-    - main
 
 # Job de nettoyage manuel
 cleanup_cluster:
