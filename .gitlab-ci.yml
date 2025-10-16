@@ -94,11 +94,9 @@ deploy_test_app:
     - kubectl delete service redis-service --ignore-not-found=true
     - sleep 5
     
-    - echo "Deploiement Nginx..."
-    - kubectl apply -f test-deployment.yaml
-    - echo "Deploiement Redis..."
-    - kubectl apply -f redis-deployment.yaml
-    - sleep 30
+    - echo "Applications nginx et redis supprimées"
+    - echo "Plus de déploiement - applications retirées du cluster"
+    - sleep 5
     
     # Vérification du déploiement
     - echo "=== VERIFICATION ==="
@@ -125,8 +123,8 @@ deploy_app_manual:
     - kubectl delete deployment nginx-test --ignore-not-found=true
     - kubectl delete service nginx-test-service --ignore-not-found=true
     - sleep 5
-    - kubectl apply -f test-deployment.yaml
-    - sleep 30
+    - echo "Applications supprimées du cluster"
+    - sleep 10
     - kubectl get pods -l app=nginx-test
     - kubectl get svc nginx-test-service
     - echo "Application accessible sur http://$K8S_MASTER_IP:30090"
@@ -150,10 +148,9 @@ deploy_all_apps_manual:
     - kubectl delete deployment redis-app --ignore-not-found=true
     - kubectl delete service redis-service --ignore-not-found=true
     - sleep 5
-    # Déploiement
-    - kubectl apply -f test-deployment.yaml
-    - kubectl apply -f redis-deployment.yaml
-    - sleep 30
+    # Applications supprimées - plus de déploiement
+    - echo "Applications nginx et redis supprimées du cluster"
+    - sleep 5
     # Vérification
     - kubectl get pods
     - kubectl get svc
