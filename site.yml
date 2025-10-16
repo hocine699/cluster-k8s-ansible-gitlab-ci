@@ -1,5 +1,5 @@
 ---
-- name: "Déploiement d'un cluster Kubernetes sur Ubuntu 24.04"
+- name: "Préparation de tous les nœuds"
   hosts: all
   become: true
   gather_facts: true
@@ -14,10 +14,18 @@
     - common
     - containerd
     - kubernetes
-    - role: master
-      when: inventory_hostname in groups['masters']
-    - role: worker
-      when: inventory_hostname in groups['workers']
+
+- name: "Initialisation du nœud master"
+  hosts: masters
+  become: true
+  roles:
+    - master
+
+- name: "Déploiement des workers"
+  hosts: workers
+  become: true
+  roles:
+    - worker
 
 - name: "Vérification finale du cluster"
   hosts: all
