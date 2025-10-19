@@ -1,10 +1,11 @@
 models:
-  - title: "Ollama - Mistral"
+  - title: "Ollama - Mistral (remote)"
     provider: "ollama"
     model: "mistral"
     api_base: "http://192.168.1.72:11434"
-
-  - title: "Ollama - CodeLlama"
+    remote: true
+  - title: "Ollama - CodeLlama (remote)"
     provider: "ollama"
     model: "codellama"
     api_base: "http://192.168.1.72:11434"
+    remote: true
