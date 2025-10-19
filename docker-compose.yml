@@ -13,3 +13,9 @@ services:
       - OLLAMA_KEEP_ALIVE=3600
       - OLLAMA_NUM_THREADS=4
       - OLLAMA_HOST=0.0.0.0
+
+
+curl http://localhost:11434/api/generate -d '{
+  "model": "codellama",
+  "prompt": "Crée un fichier docker-compose.yml pour une app Flask avec PostgreSQL."
+}'
