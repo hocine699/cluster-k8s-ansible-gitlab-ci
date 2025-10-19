@@ -1,0 +1,10 @@
+models:
+  - title: "Ollama - Mistral"
+    provider: "ollama"
+    model: "mistral"
+    api_base: "http://192.168.1.72:11434"
+
+  - title: "Ollama - CodeLlama"
+    provider: "ollama"
+    model: "codellama"
+    api_base: "http://192.168.1.72:11434"
