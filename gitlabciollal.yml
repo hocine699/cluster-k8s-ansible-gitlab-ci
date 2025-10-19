@@ -1,0 +1,43 @@
+stages:
+  - deploy
+
+variables:
+  DEPLOY_HOST: "192.168.1.72"
+  DEPLOY_USER: "ubuntu"               # ton utilisateur SSH
+  DOCKER_COMPOSE_PATH: "/opt/ollama"  # chemin sur la VM
+
+deploy_ollama:
+  stage: deploy
+  tags:
+    - synology
+  image: mon-runner-devops:latest
+  script:
+    - echo "🚀 Déploiement d'Ollama sur ${DEPLOY_HOST}"
+
+    # --- Configuration SSH ---
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+
+    # --- Copie du docker-compose.yml sur la VM ---
+    - scp -o StrictHostKeyChecking=no ./docker-compose.yml ${DEPLOY_USER}@${DEPLOY_HOST}:${DOCKER_COMPOSE_PATH}/docker-compose.yml
+
+    # --- Lancement du service Ollama ---
+    - ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
+        docker compose -f ${DOCKER_COMPOSE_PATH}/docker-compose.yml pull &&
+        docker compose -f ${DOCKER_COMPOSE_PATH}/docker-compose.yml up -d
+      "
+
+    # --- Téléchargement des modèles recommandés ---
+    - ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
+        echo '🧠 Téléchargement des modèles Mistral et CodeLlama...' &&
+        docker exec -it ollama ollama pull mistral &&
+        docker exec -it ollama ollama pull codellama
+      "
+
+    # --- Vérification ---
+    - ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@${DEPLOY_HOST} "
+        docker exec -it ollama ollama list
+      "
+  only:
+    - main
